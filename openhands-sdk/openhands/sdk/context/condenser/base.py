@@ -171,6 +171,16 @@ class RollingCondenser(PipelinableCondenserBase, ABC):
                         if hard_reset_condensation is not None:
                             return hard_reset_condensation
 
+                        # If hard_context_reset returns None (all retries exhausted),
+                        # fall back to returning the uncondensed view with a warning.
+                        # This allows the conversation to continue rather than crash.
+                        logger.warning(
+                            "Hard context reset returned None. Falling back to "
+                            "uncondensed view. The agent may encounter context "
+                            "window issues on the next step."
+                        )
+                        return view
+
                     # And if something goes wrong with the hard reset make sure we keep
                     # both errors in the stack
                     except Exception as hard_reset_exception:
