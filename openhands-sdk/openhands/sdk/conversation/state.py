@@ -13,6 +13,7 @@ from openhands.sdk.agent.base import AgentBase
 from openhands.sdk.conversation.compliance import APIComplianceMonitor
 from openhands.sdk.conversation.conversation_stats import ConversationStats
 from openhands.sdk.conversation.event_store import EventLog
+from openhands.sdk.conversation.events_list_base import EventsListBase
 from openhands.sdk.conversation.fifo_lock import FIFOLock
 from openhands.sdk.conversation.persistence_const import BASE_STATE, EVENTS_DIR
 from openhands.sdk.conversation.secret_registry import SecretRegistry
@@ -213,10 +214,10 @@ class ConversationState(OpenHandsModel):
         return data
 
     @property
-    def events(self) -> Sequence[Event]:
+    def events(self) -> EventsListBase:
         """Read-only view of conversation events.
 
-        Returns events as a Sequence to discourage direct mutation.
+        Returns events as EventsListBase to discourage direct mutation.
         Use add_event() to add new events with compliance monitoring.
         """
         return self._events
