@@ -635,10 +635,14 @@ class RemoteConversation(BaseConversation):
 
         if should_create:
             # Import here to avoid circular imports
+            from openhands.sdk.subagent.registry import (
+                get_registered_agent_definitions,
+            )
             from openhands.sdk.tool.registry import get_tool_module_qualnames
 
             tool_qualnames = get_tool_module_qualnames()
             logger.debug(f"Sending tool_module_qualnames to server: {tool_qualnames}")
+            subagent_defs = get_registered_agent_definitions()
             payload = {
                 "agent": agent.model_dump(
                     mode="json", context={"expose_secrets": True}
@@ -652,6 +656,8 @@ class RemoteConversation(BaseConversation):
                 ).model_dump(),
                 # Include tool module qualnames for dynamic registration on server
                 "tool_module_qualnames": tool_qualnames,
+                # Include subagent definitions for delegate tool on server
+                "subagent_definitions": [d.model_dump() for d in subagent_defs],
                 # Include plugins to load on server
                 "plugins": [p.model_dump() for p in plugins] if plugins else None,
             }

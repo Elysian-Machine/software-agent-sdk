@@ -240,6 +240,25 @@ class ConversationService:
                     f"{list(request.tool_module_qualnames.keys())}"
                 )
 
+        # Register subagent definitions from the client's registry
+        if request.subagent_definitions:
+            from openhands.sdk.subagent.registry import (
+                agent_definition_to_factory,
+                register_agent_if_absent,
+            )
+
+            for agent_def in request.subagent_definitions:
+                factory = agent_definition_to_factory(agent_def)
+                if not agent_def.description:
+                    agent_def = agent_def.model_copy(
+                        update={"description": f"Remote agent: {agent_def.name}"}
+                    )
+                register_agent_if_absent(factory, agent_def)
+            logger.info(
+                f"Registered {len(request.subagent_definitions)} subagent "
+                f"definitions for conversation {conversation_id}: "
+                f"{[d.name for d in request.subagent_definitions]}"
+            )
         # Plugin loading is now handled lazily by LocalConversation.
         # Just pass the plugin specs through to StoredConversation.
         # LocalConversation will:

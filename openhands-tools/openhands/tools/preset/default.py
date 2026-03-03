@@ -123,11 +123,11 @@ def register_builtins_agents(cli_mode: bool = False) -> list[str]:
     registered: list[str] = []
     for agent_def in builtins_agents_def:
         factory = agent_definition_to_factory(agent_def)
-        was_registered = register_agent_if_absent(
-            name=agent_def.name,
-            factory_func=factory,
-            description=agent_def.description or f"Agent: {agent_def.name}",
-        )
+        if not agent_def.description:
+            agent_def = agent_def.model_copy(
+                update={"description": f"Agent: {agent_def.name}"}
+            )
+        was_registered = register_agent_if_absent(factory, agent_def)
         if was_registered:
             registered.append(agent_def.name)
             logger.info(

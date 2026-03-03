@@ -44,10 +44,10 @@ logger = get_logger(__name__)
 
 
 class AgentFactory(NamedTuple):
-    """Simple container for an agent factory function and its description."""
+    """Simple container for an agent factory function and its definition."""
 
     factory_func: Callable[["LLM"], "Agent"]
-    description: str
+    definition: AgentDefinition
 
 
 # Global registry for user-registered agent factories
@@ -76,14 +76,14 @@ def register_agent(
             raise ValueError(f"Agent '{name}' already registered")
 
         _agent_factories[name] = AgentFactory(
-            factory_func=factory_func, description=description
+            factory_func=factory_func,
+            definition=AgentDefinition(name=name, description=description),
         )
 
 
 def register_agent_if_absent(
-    name: str,
     factory_func: Callable[["LLM"], "Agent"],
-    description: str,
+    definition: AgentDefinition,
 ) -> bool:
     """
     Register a custom agent if no agent with that name exists yet.
@@ -93,20 +93,19 @@ def register_agent_if_absent(
     with programmatically registered agents.
 
     Args:
-        name: Unique name for the agent
         factory_func: Function that takes an LLM and returns an Agent
-        description: Human-readable description of what this agent does
+        definition: AgentDefinition describing the agent.
 
     Returns:
         True if the agent was registered, False if an agent with that name
         already existed.
     """
     with _registry_lock:
-        if name in _agent_factories:
+        if definition.name in _agent_factories:
             return False
 
-        _agent_factories[name] = AgentFactory(
-            factory_func=factory_func, description=description
+        _agent_factories[definition.name] = AgentFactory(
+            factory_func=factory_func, definition=definition
         )
         return True
 
@@ -200,11 +199,11 @@ def register_file_agents(work_dir: str | Path) -> list[str]:
     registered: list[str] = []
     for agent_def in deduplicated:
         factory = agent_definition_to_factory(agent_def)
-        was_registered = register_agent_if_absent(
-            name=agent_def.name,
-            factory_func=factory,
-            description=agent_def.description or f"File-based agent: {agent_def.name}",
-        )
+        if not agent_def.description:
+            agent_def = agent_def.model_copy(
+                update={"description": f"File-based agent: {agent_def.name}"}
+            )
+        was_registered = register_agent_if_absent(factory, agent_def)
         if was_registered:
             registered.append(agent_def.name)
             logger.info(
@@ -232,11 +231,11 @@ def register_plugin_agents(agents: list[AgentDefinition]) -> list[str]:
     registered: list[str] = []
     for agent_def in agents:
         factory = agent_definition_to_factory(agent_def)
-        was_registered = register_agent_if_absent(
-            name=agent_def.name,
-            factory_func=factory,
-            description=agent_def.description or f"Plugin agent: {agent_def.name}",
-        )
+        if not agent_def.description:
+            agent_def = agent_def.model_copy(
+                update={"description": f"Plugin agent: {agent_def.name}"}
+            )
+        was_registered = register_agent_if_absent(factory, agent_def)
         if was_registered:
             registered.append(agent_def.name)
             logger.info(f"Registered plugin agent '{agent_def.name}'")
@@ -294,9 +293,15 @@ def get_factory_info() -> str:
         return "\n".join(info_lines)
 
     for name, factory in sorted(user_factories.items()):
-        info_lines.append(f"- **{name}**: {factory.description}")
+        info_lines.append(f"- **{name}**: {factory.definition.description}")
 
     return "\n".join(info_lines)
+
+
+def get_registered_agent_definitions() -> list[AgentDefinition]:
+    """Return stored AgentDefinitions for forwarding to remote servers."""
+    with _registry_lock:
+        return [f.definition for f in _agent_factories.values()]
 
 
 def _reset_registry_for_tests() -> None:

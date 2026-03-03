@@ -21,6 +21,7 @@ from openhands.sdk.security.confirmation_policy import (
     ConfirmationPolicyBase,
     NeverConfirm,
 )
+from openhands.sdk.subagent.schema import AgentDefinition
 from openhands.sdk.utils.models import DiscriminatedUnionMixin, OpenHandsModel
 from openhands.sdk.workspace import LocalWorkspace
 
@@ -106,6 +107,13 @@ class StartConversationRequest(BaseModel):
             "Mapping of tool names to their module qualnames from the client's "
             "registry. These modules will be dynamically imported on the server "
             "to register the tools for this conversation."
+        ),
+    )
+    subagent_definitions: list[AgentDefinition] = Field(
+        default_factory=list,
+        description=(
+            "Subagent definitions from the client's registry. These are "
+            "registered on the server so DelegateTool can advertise them."
         ),
     )
     plugins: list[PluginSource] | None = Field(
