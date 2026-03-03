@@ -60,7 +60,7 @@ def get_default_tools(
         from openhands.tools.browser_use import BrowserToolSet
 
         tools.append(Tool(name=BrowserToolSet.name))
-    _ = register_builtins_agents(not enable_browser)
+    _ = register_builtins_agents(enable_browser)
     return tools
 
 
@@ -131,6 +131,7 @@ def register_builtins_agents(cli_mode: bool = False) -> list[str]:
             name=agent_def.name,
             factory_func=factory,
             description=agent_def.description or f"Agent: {agent_def.name}",
+            definition=agent_def,
         )
         if was_registered:
             registered.append(agent_def.name)

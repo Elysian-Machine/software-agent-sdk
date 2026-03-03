@@ -52,6 +52,7 @@ class AgentFactory(NamedTuple):
 
 # Global registry for user-registered agent factories
 _agent_factories: dict[str, AgentFactory] = {}
+_agent_definitions: dict[str, AgentDefinition] = {}
 _registry_lock = RLock()
 
 
@@ -84,6 +85,7 @@ def register_agent_if_absent(
     name: str,
     factory_func: Callable[["LLM"], "Agent"],
     description: str,
+    definition: AgentDefinition | None = None,
 ) -> bool:
     """
     Register a custom agent if no agent with that name exists yet.
@@ -96,6 +98,8 @@ def register_agent_if_absent(
         name: Unique name for the agent
         factory_func: Function that takes an LLM and returns an Agent
         description: Human-readable description of what this agent does
+        definition: Optional AgentDefinition to store for serialization
+            to remote servers.
 
     Returns:
         True if the agent was registered, False if an agent with that name
@@ -108,6 +112,8 @@ def register_agent_if_absent(
         _agent_factories[name] = AgentFactory(
             factory_func=factory_func, description=description
         )
+        if definition is not None:
+            _agent_definitions[name] = definition
         return True
 
 
@@ -204,6 +210,7 @@ def register_file_agents(work_dir: str | Path) -> list[str]:
             name=agent_def.name,
             factory_func=factory,
             description=agent_def.description or f"File-based agent: {agent_def.name}",
+            definition=agent_def,
         )
         if was_registered:
             registered.append(agent_def.name)
@@ -236,6 +243,7 @@ def register_plugin_agents(agents: list[AgentDefinition]) -> list[str]:
             name=agent_def.name,
             factory_func=factory,
             description=agent_def.description or f"Plugin agent: {agent_def.name}",
+            definition=agent_def,
         )
         if was_registered:
             registered.append(agent_def.name)
@@ -299,7 +307,14 @@ def get_factory_info() -> str:
     return "\n".join(info_lines)
 
 
+def get_registered_agent_definitions() -> list[AgentDefinition]:
+    """Return stored AgentDefinitions for forwarding to remote servers."""
+    with _registry_lock:
+        return list(_agent_definitions.values())
+
+
 def _reset_registry_for_tests() -> None:
     """Clear the registry for tests to avoid cross-test contamination."""
     with _registry_lock:
         _agent_factories.clear()
+        _agent_definitions.clear()
