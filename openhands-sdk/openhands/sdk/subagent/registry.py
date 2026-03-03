@@ -57,40 +57,6 @@ _agent_factories: dict[str, AgentFactory] = {}
 _registry_lock = RLock()
 
 
-def _definition_from_factory(
-    name: str,
-    factory_func: Callable[["LLM"], "Agent"],
-    description: str,
-) -> AgentDefinition:
-    """Introspect *factory_func* with a dummy LLM to build a full AgentDefinition.
-
-    This lets register_agent() accept just (name, factory_func, description)
-    while still producing a complete definition (tools, system_prompt, model)
-    that can be forwarded to a remote server.  Falls back to a minimal
-    definition if the factory raises.
-    """
-    _model_placeholder = "__introspect__"
-    try:
-        from openhands.sdk.llm.llm import LLM as _LLM
-
-        agent = factory_func(_LLM(model=_model_placeholder, api_key=SecretStr("n/a")))
-        tools = [t.name for t in agent.tools]
-        system_prompt = ""
-        if agent.agent_context and agent.agent_context.system_message_suffix:
-            system_prompt = agent.agent_context.system_message_suffix
-        model = agent.llm.model if agent.llm.model != _model_placeholder else "inherit"
-        return AgentDefinition(
-            name=name,
-            description=description,
-            tools=tools,
-            system_prompt=system_prompt,
-            model=model,
-        )
-    except Exception:
-        logger.debug(f"Could not introspect factory for agent '{name}'")
-        return AgentDefinition(name=name, description=description)
-
-
 def register_agent(
     name: str,
     factory_func: Callable[["LLM"], "Agent"],
@@ -107,13 +73,28 @@ def register_agent(
     Raises:
         ValueError: If an agent with the same name already exists
     """
+    try:
+        from openhands.sdk.llm.llm import LLM as _LLM
+
+        _model_placeholder = "__introspect__"
+        agent = factory_func(_LLM(model=_model_placeholder, api_key=SecretStr("n/a")))
+        definition = AgentDefinition.from_agent(
+            agent, name=name, description=description
+        )
+        # If the model was our placeholder, the factory didn't set one explicitly
+        if definition.model == _model_placeholder:
+            definition = definition.model_copy(update={"model": "inherit"})
+    except Exception:
+        logger.debug(f"Could not introspect factory for agent '{name}'")
+        definition = AgentDefinition(name=name, description=description)
+
     with _registry_lock:
         if name in _agent_factories:
             raise ValueError(f"Agent '{name}' already registered")
 
         _agent_factories[name] = AgentFactory(
             factory_func=factory_func,
-            definition=_definition_from_factory(name, factory_func, description),
+            definition=definition,
         )
 
 

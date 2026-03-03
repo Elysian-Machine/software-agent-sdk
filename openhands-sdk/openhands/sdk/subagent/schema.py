@@ -4,10 +4,14 @@ from __future__ import annotations
 
 import re
 from pathlib import Path
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 import frontmatter
 from pydantic import BaseModel, Field
+
+
+if TYPE_CHECKING:
+    from openhands.sdk.agent.base import AgentBase
 
 
 def _extract_examples(description: str) -> list[str]:
@@ -110,4 +114,38 @@ class AgentDefinition(BaseModel):
             source=str(agent_path),
             when_to_use_examples=when_to_use_examples,
             metadata=metadata,
+        )
+
+    @classmethod
+    def from_agent(
+        cls,
+        agent: AgentBase,
+        name: str,
+        description: str,
+    ) -> AgentDefinition:
+        """Build an AgentDefinition by introspecting a live Agent instance.
+
+        Args:
+            agent: The agent to extract configuration from.
+            name: Name for the agent definition.
+            description: Human-readable description of the agent.
+
+        Returns:
+            A fully populated AgentDefinition.
+        """
+        tools = [t.name for t in agent.tools]
+
+        if agent.agent_context and agent.agent_context.system_message_suffix:
+            system_prompt = agent.agent_context.system_message_suffix
+        else:
+            system_prompt = ""
+
+        model = agent.llm.model if agent.llm.model else "inherit"
+
+        return cls(
+            name=name,
+            description=description,
+            tools=tools,
+            system_prompt=system_prompt,
+            model=model,
         )
