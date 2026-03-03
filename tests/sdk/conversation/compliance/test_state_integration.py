@@ -103,12 +103,14 @@ def test_add_event_normal_flow_no_violations(conversation_state, caplog):
     assert "API compliance violation detected" not in caplog.text
 
 
-def test_add_event_still_adds_on_violation(conversation_state, caplog):
-    """Events should still be added even when violations occur (observation mode)."""
+def test_add_event_rejects_on_violation(conversation_state, caplog):
+    """Events with violations should be rejected (not added to event log)."""
     import logging
 
     action = make_action_event(tool_call_id="call_1")
     conversation_state.add_event(action)
+
+    initial_count = len(conversation_state.events)
 
     # User message while action pending - violation
     user_msg = make_user_message_event()
@@ -116,8 +118,9 @@ def test_add_event_still_adds_on_violation(conversation_state, caplog):
     with caplog.at_level(logging.WARNING):
         conversation_state.add_event(user_msg)
 
-    # Event should still be in the log
-    assert conversation_state.events[-1].id == user_msg.id
+    # Event should NOT be in the log
+    assert len(conversation_state.events) == initial_count
+    assert conversation_state.events[-1].id == action.id
 
     # Violation should be logged
     assert "API compliance violation detected" in caplog.text

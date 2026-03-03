@@ -538,12 +538,8 @@ class ConversationState(OpenHandsModel):
         as this bypasses compliance monitoring and may cause silent failures.
 
         For LLMConvertibleEvent instances, the event is checked against API
-        compliance properties and any violations are logged before adding to
-        the event log.
-
-        Currently operates in observation mode: violations are logged but
-        events are still processed. Future versions may support per-property
-        reconciliation strategies.
+        compliance properties. Events with violations are logged and rejected
+        (not added to the event log).
 
         Args:
             event: The event to add to the conversation.
@@ -551,11 +547,13 @@ class ConversationState(OpenHandsModel):
         # Check for compliance violations only for LLM-convertible events
         if isinstance(event, LLMConvertibleEvent):
             try:
-                self.compliance_monitor.process_event(event)
+                violations = self.compliance_monitor.process_event(event)
+                if violations:
+                    # Reject events with violations
+                    return
             except Exception as e:
                 logger.exception(
                     "Error checking compliance for event %s: %s", event.id, e
                 )
 
-        # Add to event log regardless of violations (observation mode)
         self._events.append(event)
