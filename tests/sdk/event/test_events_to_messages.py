@@ -453,3 +453,236 @@ class TestEventsToMessages:
         assert msgs[0].role == "assistant"
         assert msgs[1].role == "tool"
         assert msgs[1].tool_call_id == "call_ne"
+
+
+class TestDuplicateObservationDeduplication:
+    """Tests for deduplication of consecutive observations with the same tool_call_id.
+
+    This handles the scenario where:
+    1. Agent invokes a tool (ActionEvent with tool_call_id)
+    2. Runtime restarts, creating AgentErrorEvent for "unmatched" action
+    3. Tool completes, creating ObservationEvent with same tool_call_id
+    4. Both have the same tool_call_id, but only one message should be sent
+
+    The deduplication prioritizes: ObservationEvent > other types > AgentErrorEvent
+    """
+
+    def test_consecutive_error_and_observation_keeps_observation(self):
+        """Test that ObservationEvent is kept over AgentErrorEvent when consecutive."""
+        error = AgentErrorEvent(
+            error="A restart occurred while this tool was in progress.",
+            tool_call_id="call_1",
+            tool_name="terminal",
+        )
+        obs = ObservationEvent(
+            source="environment",
+            observation=EventsToMessagesMockObservation(result="Command succeeded"),
+            action_id="action_1",
+            tool_name="terminal",
+            tool_call_id="call_1",
+        )
+
+        events = cast(list[LLMConvertibleEvent], [error, obs])
+        messages = LLMConvertibleEvent.events_to_messages(events)
+
+        # Only one message should be produced (the ObservationEvent)
+        assert len(messages) == 1
+        assert messages[0].role == "tool"
+        assert messages[0].tool_call_id == "call_1"
+        # Should contain the actual result, not the error
+        assert "Command succeeded" in messages[0].content[0].text  # type: ignore
+
+    def test_consecutive_observation_and_error_keeps_observation(self):
+        """Test deduplication regardless of order - observation still preferred."""
+        obs = ObservationEvent(
+            source="environment",
+            observation=EventsToMessagesMockObservation(result="Command succeeded"),
+            action_id="action_1",
+            tool_name="terminal",
+            tool_call_id="call_1",
+        )
+        error = AgentErrorEvent(
+            error="A restart occurred while this tool was in progress.",
+            tool_call_id="call_1",
+            tool_name="terminal",
+        )
+
+        events = cast(list[LLMConvertibleEvent], [obs, error])
+        messages = LLMConvertibleEvent.events_to_messages(events)
+
+        # Only one message - ObservationEvent is preferred
+        assert len(messages) == 1
+        assert "Command succeeded" in messages[0].content[0].text  # type: ignore
+
+    def test_non_consecutive_duplicates_not_deduplicated(self):
+        """Test that non-consecutive duplicates are NOT deduplicated.
+
+        If observations with the same tool_call_id are separated by other events,
+        this indicates a bug that should be exposed rather than hidden.
+        """
+        error = AgentErrorEvent(
+            error="Restart error",
+            tool_call_id="call_1",
+            tool_name="terminal",
+        )
+        user_msg = MessageEvent(
+            source="user",
+            llm_message=Message(
+                role="user", content=[TextContent(text="Some interruption")]
+            ),
+        )
+        obs = ObservationEvent(
+            source="environment",
+            observation=EventsToMessagesMockObservation(result="Actual result"),
+            action_id="action_1",
+            tool_name="terminal",
+            tool_call_id="call_1",
+        )
+
+        events = cast(list[LLMConvertibleEvent], [error, user_msg, obs])
+        messages = LLMConvertibleEvent.events_to_messages(events)
+
+        # All three messages should be produced (non-consecutive not deduplicated)
+        assert len(messages) == 3
+        assert messages[0].role == "tool"  # error
+        assert messages[1].role == "user"  # message
+        assert messages[2].role == "tool"  # observation
+
+    def test_multiple_consecutive_errors_keeps_last(self):
+        """Test that when only errors exist, the last one is kept."""
+        error1 = AgentErrorEvent(
+            error="First error",
+            tool_call_id="call_1",
+            tool_name="terminal",
+        )
+        error2 = AgentErrorEvent(
+            error="Second error",
+            tool_call_id="call_1",
+            tool_name="terminal",
+        )
+
+        events = cast(list[LLMConvertibleEvent], [error1, error2])
+        messages = LLMConvertibleEvent.events_to_messages(events)
+
+        # Only one message - the last error
+        assert len(messages) == 1
+        assert "Second error" in messages[0].content[0].text  # type: ignore
+
+    def test_multiple_consecutive_observations_keeps_last(self):
+        """Test that when multiple observations exist, the last one is kept."""
+        obs1 = ObservationEvent(
+            source="environment",
+            observation=EventsToMessagesMockObservation(result="First result"),
+            action_id="action_1",
+            tool_name="terminal",
+            tool_call_id="call_1",
+        )
+        obs2 = ObservationEvent(
+            source="environment",
+            observation=EventsToMessagesMockObservation(result="Second result"),
+            action_id="action_1",
+            tool_name="terminal",
+            tool_call_id="call_1",
+        )
+
+        events = cast(list[LLMConvertibleEvent], [obs1, obs2])
+        messages = LLMConvertibleEvent.events_to_messages(events)
+
+        # Only one message - the last observation
+        assert len(messages) == 1
+        assert "Second result" in messages[0].content[0].text  # type: ignore
+
+    def test_mixed_scenario_multiple_tool_calls(self):
+        """Test with multiple tool calls, some having consecutive duplicates."""
+        # Tool call 1: has consecutive duplicate (error + observation)
+        error1 = AgentErrorEvent(
+            error="Restart error for call_1",
+            tool_call_id="call_1",
+            tool_name="terminal",
+        )
+        obs1 = ObservationEvent(
+            source="environment",
+            observation=EventsToMessagesMockObservation(result="Result 1"),
+            action_id="action_1",
+            tool_name="terminal",
+            tool_call_id="call_1",
+        )
+
+        # Some other message between tool calls
+        user_msg = MessageEvent(
+            source="user",
+            llm_message=Message(role="user", content=[TextContent(text="Continue")]),
+        )
+
+        # Tool call 2: single observation (no duplicate)
+        obs2 = ObservationEvent(
+            source="environment",
+            observation=EventsToMessagesMockObservation(result="Result 2"),
+            action_id="action_2",
+            tool_name="terminal",
+            tool_call_id="call_2",
+        )
+
+        events = cast(list[LLMConvertibleEvent], [error1, obs1, user_msg, obs2])
+        messages = LLMConvertibleEvent.events_to_messages(events)
+
+        # 3 messages: deduplicated tool_1 result + user message + tool_2 result
+        assert len(messages) == 3
+        assert messages[0].role == "tool"
+        assert messages[0].tool_call_id == "call_1"
+        assert "Result 1" in messages[0].content[0].text  # type: ignore
+        assert messages[1].role == "user"
+        assert messages[2].role == "tool"
+        assert messages[2].tool_call_id == "call_2"
+
+    def test_restart_scenario_full_conversation(self):
+        """Test the full restart scenario in a realistic conversation."""
+        # 1. User asks to run a command
+        user_msg = MessageEvent(
+            source="user",
+            llm_message=Message(role="user", content=[TextContent(text="Run ls -la")]),
+        )
+
+        # 2. Agent calls terminal tool
+        action = create_action_event(
+            thought_text="I'll run the command",
+            tool_name="terminal",
+            tool_call_id="call_ls",
+            llm_response_id="resp_1",
+            action_args={"command": "ls -la"},
+        )
+
+        # 3. Runtime restarts while tool is running - creates error
+        restart_error = AgentErrorEvent(
+            error="A restart occurred while this tool was in progress.",
+            tool_call_id="call_ls",
+            tool_name="terminal",
+        )
+
+        # 4. Tool actually completes - creates observation
+        result = ObservationEvent(
+            source="environment",
+            observation=EventsToMessagesMockObservation(
+                result="total 0\ndrwxr-xr-x 2 user user 40 Jan 1 00:00 ."
+            ),
+            action_id="action_ls",
+            tool_name="terminal",
+            tool_call_id="call_ls",
+        )
+
+        events = cast(
+            list[LLMConvertibleEvent], [user_msg, action, restart_error, result]
+        )
+        messages = LLMConvertibleEvent.events_to_messages(events)
+
+        # Should have 3 messages: user, assistant (tool call), tool result
+        # The restart error should be deduplicated
+        assert len(messages) == 3
+        assert messages[0].role == "user"
+        assert messages[1].role == "assistant"
+        assert messages[1].tool_calls is not None
+        assert messages[1].tool_calls[0].id == "call_ls"
+        assert messages[2].role == "tool"
+        assert messages[2].tool_call_id == "call_ls"
+        # Should have the actual result, not the error
+        assert "drwxr-xr-x" in messages[2].content[0].text  # type: ignore

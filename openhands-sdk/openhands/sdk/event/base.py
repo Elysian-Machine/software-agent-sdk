@@ -1,6 +1,7 @@
 import uuid
 from abc import ABC, abstractmethod
 from datetime import datetime
+from logging import getLogger
 from typing import TYPE_CHECKING, ClassVar
 
 from pydantic import ConfigDict, Field
@@ -12,7 +13,9 @@ from openhands.sdk.utils.models import DiscriminatedUnionMixin
 
 
 if TYPE_CHECKING:
-    from openhands.sdk.event.llm_convertible import ActionEvent
+    from openhands.sdk.event.llm_convertible import ActionEvent, ObservationBaseEvent
+
+logger = getLogger(__name__)
 
 N_CHAR_PREVIEW = 500
 
@@ -89,9 +92,22 @@ class LLMConvertibleEvent(Event, ABC):
 
     @staticmethod
     def events_to_messages(events: list["LLMConvertibleEvent"]) -> list[Message]:
-        """Convert event stream to LLM message stream, handling multi-action batches"""
-        # TODO: We should add extensive tests for this
-        from openhands.sdk.event.llm_convertible import ActionEvent
+        """Convert event stream to LLM message stream, handling multi-action batches.
+
+        This method handles two key batching scenarios:
+        1. ActionEvents with the same llm_response_id are combined into a single
+           message (parallel tool calls from the same LLM response)
+        2. Consecutive ObservationBaseEvents with the same tool_call_id are
+           deduplicated (handles race conditions when a tool completes after a
+           restart creates an error)
+
+        For duplicate observations, priority is:
+        ObservationEvent > others > AgentErrorEvent.
+        """
+        from openhands.sdk.event.llm_convertible import (
+            ActionEvent,
+            ObservationBaseEvent,
+        )
 
         messages = []
         i = 0
@@ -118,12 +134,73 @@ class LLMConvertibleEvent(Event, ABC):
                 # Create combined message for the response
                 messages.append(_combine_action_events(batch_events))
                 i = j
+
+            elif isinstance(event, ObservationBaseEvent):
+                # Collect consecutive observations with the same tool_call_id
+                # This handles the case where AgentErrorEvent and ObservationEvent
+                # are both created for the same tool_call_id (e.g., after a restart)
+                batch_observations: list[ObservationBaseEvent] = [event]
+                tool_call_id = event.tool_call_id
+
+                # Look ahead for consecutive observations with same tool_call_id
+                j = i + 1
+                while j < len(events) and isinstance(events[j], ObservationBaseEvent):
+                    next_event = events[j]
+                    assert isinstance(next_event, ObservationBaseEvent)
+                    if next_event.tool_call_id != tool_call_id:
+                        break
+                    batch_observations.append(next_event)
+                    j += 1
+
+                # Select the best observation to use
+                if len(batch_observations) > 1:
+                    logger.warning(
+                        f"Found {len(batch_observations)} consecutive observations "
+                        f"for tool_call_id={tool_call_id}. Deduplicating."
+                    )
+                    selected = _select_best_observation(batch_observations)
+                else:
+                    selected = batch_observations[0]
+
+                messages.append(selected.to_llm_message())
+                i = j
             else:
                 # Regular event - direct conversion
                 messages.append(event.to_llm_message())
                 i += 1
 
         return messages
+
+
+def _select_best_observation(
+    observations: list["ObservationBaseEvent"],
+) -> "ObservationBaseEvent":
+    """Select the best observation when multiple exist for the same tool_call_id.
+
+    Priority: ObservationEvent > other types > AgentErrorEvent
+    If same priority, prefer the later one (more recent).
+
+    This handles the race condition where a runtime restart creates an
+    AgentErrorEvent for an "unmatched" action, but the tool then completes and
+    creates an ObservationEvent. The ObservationEvent has the actual result,
+    so it takes priority.
+    """
+    from openhands.sdk.event.llm_convertible import AgentErrorEvent, ObservationEvent
+
+    obs_events = [o for o in observations if isinstance(o, ObservationEvent)]
+    error_events = [o for o in observations if isinstance(o, AgentErrorEvent)]
+    other_events = [
+        o
+        for o in observations
+        if not isinstance(o, (ObservationEvent, AgentErrorEvent))
+    ]
+
+    # Return by priority - later events within each category are preferred
+    if obs_events:
+        return obs_events[-1]
+    if other_events:
+        return other_events[-1]
+    return error_events[-1]
 
 
 def _combine_action_events(events: list["ActionEvent"]) -> Message:
