@@ -28,6 +28,8 @@ from pathlib import Path
 from threading import RLock
 from typing import TYPE_CHECKING, NamedTuple
 
+from pydantic import SecretStr
+
 from openhands.sdk.logger import get_logger
 from openhands.sdk.subagent.load import (
     load_project_agents,
@@ -60,18 +62,18 @@ def _definition_from_factory(
     factory_func: Callable[["LLM"], "Agent"],
     description: str,
 ) -> AgentDefinition:
-    """Introspect *factory_func* with a TestLLM to build a full AgentDefinition.
+    """Introspect *factory_func* with a dummy LLM to build a full AgentDefinition.
 
     This lets register_agent() accept just (name, factory_func, description)
     while still producing a complete definition (tools, system_prompt, model)
     that can be forwarded to a remote server.  Falls back to a minimal
     definition if the factory raises.
     """
-    _model_placeholder = "test-model"
+    _model_placeholder = "__introspect__"
     try:
-        from openhands.sdk.testing import TestLLM
+        from openhands.sdk.llm.llm import LLM as _LLM
 
-        agent = factory_func(TestLLM(model=_model_placeholder))
+        agent = factory_func(_LLM(model=_model_placeholder, api_key=SecretStr("n/a")))
         tools = [t.name for t in agent.tools]
         system_prompt = ""
         if agent.agent_context and agent.agent_context.system_message_suffix:
