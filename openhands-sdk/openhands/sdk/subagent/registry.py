@@ -106,8 +106,8 @@ def register_agent_if_absent(
     Register a custom agent if no agent with that name exists yet.
 
     Unlike register_agent(), this does not raise on duplicates. This is used
-    by file-based and plugin-based agent loading to gracefully skip conflicts
-    with programmatically registered agents.
+    in the remote conversation service, by file-based and plugin-based agent
+    loading to gracefully skip conflicts with programmatically registered agents.
 
     Args:
         factory_func: Function that takes an LLM and returns an Agent
