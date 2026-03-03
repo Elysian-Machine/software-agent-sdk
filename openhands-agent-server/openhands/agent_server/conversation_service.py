@@ -27,6 +27,10 @@ from openhands.sdk.conversation.state import (
 )
 from openhands.sdk.event import MessageEvent
 from openhands.sdk.event.conversation_state import ConversationStateUpdateEvent
+from openhands.sdk.subagent.registry import (
+    agent_definition_to_factory,
+    register_agent_if_absent,
+)
 from openhands.sdk.utils.cipher import Cipher
 
 
@@ -242,11 +246,6 @@ class ConversationService:
 
         # Register subagent definitions from the client's registry
         if request.subagent_definitions:
-            from openhands.sdk.subagent.registry import (
-                agent_definition_to_factory,
-                register_agent_if_absent,
-            )
-
             for agent_def in request.subagent_definitions:
                 factory = agent_definition_to_factory(agent_def)
                 if not agent_def.description:
