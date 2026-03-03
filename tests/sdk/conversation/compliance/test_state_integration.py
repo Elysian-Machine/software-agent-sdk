@@ -42,12 +42,13 @@ def conversation_state(temp_workspace, mock_agent):
 
 
 def test_add_event_appends_to_event_log(conversation_state):
-    """add_event() should append events to the event log."""
+    """add_event() should append events to the event log and return True."""
     initial_count = len(conversation_state.events)
 
     user_msg = make_user_message_event("Hello")
-    conversation_state.add_event(user_msg)
+    result = conversation_state.add_event(user_msg)
 
+    assert result is True
     assert len(conversation_state.events) == initial_count + 1
     assert conversation_state.events[-1].id == user_msg.id
 
@@ -104,11 +105,12 @@ def test_add_event_normal_flow_no_violations(conversation_state, caplog):
 
 
 def test_add_event_rejects_on_violation(conversation_state, caplog):
-    """Events with violations should be rejected (not added to event log)."""
+    """Events with violations should be rejected (not added) and return False."""
     import logging
 
     action = make_action_event(tool_call_id="call_1")
-    conversation_state.add_event(action)
+    result = conversation_state.add_event(action)
+    assert result is True
 
     initial_count = len(conversation_state.events)
 
@@ -116,7 +118,10 @@ def test_add_event_rejects_on_violation(conversation_state, caplog):
     user_msg = make_user_message_event()
 
     with caplog.at_level(logging.WARNING):
-        conversation_state.add_event(user_msg)
+        result = conversation_state.add_event(user_msg)
+
+    # Should return False for rejected event
+    assert result is False
 
     # Event should NOT be in the log
     assert len(conversation_state.events) == initial_count

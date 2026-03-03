@@ -132,21 +132,30 @@ def test_monitor_parallel_tool_calls():
 
 
 def test_monitor_handles_check_exception_gracefully():
-    """Monitor should handle exceptions in check gracefully.
+    """Monitor should handle exceptions in check gracefully (fail-closed).
 
     If _check_tool_call_sequence raises an exception, it should be caught
-    and logged, not crash the monitor. This ensures observation mode is robust.
+    and logged, not crash the monitor. State should NOT be updated (fail-closed).
     """
     monitor = APIComplianceMonitor()
 
+    action = make_action_event(tool_call_id="call_check_err")
+    monitor.process_event(action)
+    initial_pending = len(monitor.state.pending_tool_call_ids)
+
+    # Simulate another action where check fails
     with patch.object(
         monitor, "_check_tool_call_sequence", side_effect=ValueError("Oops!")
     ):
         # Should not raise - the exception should be caught and logged
-        violations = monitor.process_event(make_user_message_event())
+        violations = monitor.process_event(make_action_event(tool_call_id="call_2"))
 
         # The monitor should continue working despite the error
         assert violations == []
+
+    # Fail-closed: state should NOT be updated when check fails
+    assert len(monitor.state.pending_tool_call_ids) == initial_pending
+    assert "call_2" not in monitor.state.pending_tool_call_ids
 
 
 def test_monitor_handles_update_exception_gracefully():

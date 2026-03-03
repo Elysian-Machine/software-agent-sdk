@@ -535,7 +535,7 @@ class ConversationState(OpenHandsModel):
             self._compliance_monitor = APIComplianceMonitor()
         return self._compliance_monitor
 
-    def add_event(self, event: Event) -> None:
+    def add_event(self, event: Event) -> bool:
         """Add an event to the conversation, checking for API compliance.
 
         This is the only supported way to add events to the conversation.
@@ -548,6 +548,9 @@ class ConversationState(OpenHandsModel):
 
         Args:
             event: The event to add to the conversation.
+
+        Returns:
+            True if the event was added, False if rejected due to violations.
         """
         # Check for compliance violations only for LLM-convertible events
         if isinstance(event, LLMConvertibleEvent):
@@ -555,10 +558,13 @@ class ConversationState(OpenHandsModel):
                 violations = self.compliance_monitor.process_event(event)
                 if violations:
                     # Reject events with violations
-                    return
+                    return False
             except Exception as e:
                 logger.exception(
                     "Error checking compliance for event %s: %s", event.id, e
                 )
+                # Fail-closed: reject event if compliance check crashes
+                return False
 
         self._events.append(event)
+        return True

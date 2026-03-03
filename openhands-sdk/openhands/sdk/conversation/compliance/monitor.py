@@ -127,6 +127,10 @@ class APIComplianceMonitor:
     def process_event(self, event: LLMConvertibleEvent) -> list[ComplianceViolation]:
         """Check an event for violations and update state.
 
+        Fail-closed semantics: if checking crashes, the event is treated as
+        violating (state is not updated). Only events that pass checking
+        without violations have their state updated.
+
         Args:
             event: The event to process.
 
@@ -134,6 +138,7 @@ class APIComplianceMonitor:
             List of violations detected (empty if compliant).
         """
         violations: list[ComplianceViolation] = []
+        check_failed = False
 
         try:
             violation = self._check_tool_call_sequence(event)
@@ -151,14 +156,17 @@ class APIComplianceMonitor:
                 event.id,
                 e,
             )
+            check_failed = True
 
-        try:
-            self._update_state(event)
-        except Exception as e:
-            logger.exception(
-                "Error updating compliance state for event %s: %s",
-                event.id,
-                e,
-            )
+        # Only update state if check succeeded and no violations
+        if not check_failed and not violations:
+            try:
+                self._update_state(event)
+            except Exception as e:
+                logger.exception(
+                    "Error updating compliance state for event %s: %s",
+                    event.id,
+                    e,
+                )
 
         return violations
