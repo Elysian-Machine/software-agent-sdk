@@ -185,6 +185,7 @@ class LocalConversation(BaseConversation):
             # regions), so updating state here is thread-safe.
             #
             # Use add_event() to check API compliance before appending.
+            # Events with violations are logged and rejected (not added to event log).
             # Violations are logged but events are still processed.
             self._state.add_event(e)
             # Track user MessageEvent IDs here so hook callbacks (which may
