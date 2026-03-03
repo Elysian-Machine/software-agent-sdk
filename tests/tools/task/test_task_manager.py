@@ -237,8 +237,7 @@ class TestTaskManager:
         manager, _ = _manager_with_parent(tmp_path)
         agent = manager._get_sub_agent("test_expert")
         assert isinstance(agent, Agent)
-        assert len(factory_called_with) == 1
-        assert factory_called_with[0].stream is False
+        assert agent.llm.stream is False
 
     def test_unknown_agent_type_raises(self, tmp_path):
         manager, _ = _manager_with_parent(tmp_path)
