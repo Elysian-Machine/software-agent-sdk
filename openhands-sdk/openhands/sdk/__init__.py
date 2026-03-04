@@ -48,7 +48,6 @@ from openhands.sdk.mcp import (
 )
 from openhands.sdk.plugin import Plugin
 from openhands.sdk.subagent import (
-    agent_definition_to_factory,
     load_agents_from_dir,
     load_project_agents,
     load_user_agents,
@@ -124,7 +123,6 @@ __all__ = [
     "load_project_agents",
     "load_user_agents",
     "load_agents_from_dir",
-    "agent_definition_to_factory",
     "load_project_skills",
     "load_skills_from_dir",
     "load_user_skills",

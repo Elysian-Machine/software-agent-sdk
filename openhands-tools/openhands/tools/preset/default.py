@@ -2,7 +2,7 @@
 
 from pathlib import Path
 
-from openhands.sdk import Agent, agent_definition_to_factory, load_agents_from_dir
+from openhands.sdk import Agent, load_agents_from_dir
 from openhands.sdk.context.condenser import (
     LLMSummarizingCondenser,
 )
@@ -122,7 +122,7 @@ def register_builtins_agents(cli_mode: bool = False) -> list[str]:
 
     registered: list[str] = []
     for agent_def in builtins_agents_def:
-        factory = agent_definition_to_factory(agent_def)
+        factory = agent_def.to_factory()
         if not agent_def.description:
             agent_def = agent_def.model_copy(
                 update={"description": f"Agent: {agent_def.name}"}

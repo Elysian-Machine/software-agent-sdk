@@ -14,7 +14,7 @@ from pydantic import SecretStr
 
 from openhands.agent_server.conversation_service import ConversationService
 from openhands.agent_server.models import StartConversationRequest
-from openhands.sdk import LLM, Agent
+from openhands.sdk import LLM, Agent, Tool
 from openhands.sdk.subagent.registry import (
     _reset_registry_for_tests,
     get_factory_info,
@@ -66,17 +66,29 @@ def _make_request(**overrides) -> StartConversationRequest:
 @pytest.mark.asyncio
 async def test_start_conversation_registers_subagent_definitions(conversation_service):
     """Subagent definitions in the request are registered so the agent can see them."""
+    from openhands.sdk.tool import register_tool
+    from openhands.sdk.tool.builtins import FinishTool, ThinkTool
+
+    register_tool(
+        "finish",
+        FinishTool,
+    )
+    register_tool(
+        "think",
+        ThinkTool,
+    )
+
     agent_defs = [
         AgentDefinition(
             name="bash",
             description="Command execution specialist",
-            tools=["terminal"],
+            tools=["finish"],
             system_prompt="You are a bash specialist.",
         ),
         AgentDefinition(
             name="explore",
             description="Codebase exploration agent",
-            tools=["terminal", "file_editor"],
+            tools=["think"],
             system_prompt="You are an exploration specialist.",
         ),
     ]
@@ -103,28 +115,39 @@ async def test_start_conversation_registers_subagent_definitions(conversation_se
 
 def test_get_registered_agent_definitions_returns_stored_definitions():
     """Registered definitions are retrievable for forwarding to remote servers."""
-    for name, desc in [
-        ("bash", "Command execution"),
-        ("explore", "Codebase exploration"),
+    for name, desc, tool in [
+        ("bash", "Command execution", "terminal"),
+        ("explore", "Codebase exploration", "file_editor"),
     ]:
         register_agent_if_absent(
             lambda llm: None,  # type: ignore[return-value]
-            AgentDefinition(name=name, description=desc, tools=["terminal"]),
+            AgentDefinition(name=name, description=desc, tools=[tool]),
         )
 
     defs = get_registered_agent_definitions()
     assert {d.name for d in defs} == {"bash", "explore"}
+    assert {d.description for d in defs} == {
+        "Command execution",
+        "Codebase exploration",
+    }
+    assert {"".join(d.tools) for d in defs} == {"terminal", "file_editor"}
 
 
 def test_register_agent_introspects_factory():
     """register_agent() introspects the factory to build a full definition."""
     from openhands.sdk.context.agent_context import AgentContext
-    from openhands.sdk.tool.spec import Tool
+    from openhands.sdk.tool import register_tool
+    from openhands.sdk.tool.builtins import FinishTool
+
+    register_tool(
+        "finish",
+        FinishTool,
+    )
 
     def create_expert(llm):
         return Agent(
             llm=llm,
-            tools=[Tool(name="terminal")],
+            tools=[Tool(name="finish")],
             agent_context=AgentContext(
                 system_message_suffix="You are an expert.",
             ),
@@ -138,5 +161,5 @@ def test_register_agent_introspects_factory():
 
     defs = get_registered_agent_definitions()
     expert_def = next(d for d in defs if d.name == "expert")
-    assert expert_def.tools == ["terminal"]
+    assert expert_def.tools == ["finish"]
     assert expert_def.system_prompt == "You are an expert."

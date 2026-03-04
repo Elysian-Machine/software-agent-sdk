@@ -13,7 +13,6 @@ from openhands.sdk import (
     Agent,
     Conversation,
     Tool,
-    agent_definition_to_factory,
     register_agent,
 )
 from openhands.sdk.subagent import AgentDefinition
@@ -32,7 +31,7 @@ grammar_checker = AgentDefinition(
 # 2. Register it in the delegate registry
 register_agent(
     name=grammar_checker.name,
-    factory_func=agent_definition_to_factory(grammar_checker),
+    factory_func=grammar_checker.to_factory(),
     description=grammar_checker.description,
 )
 

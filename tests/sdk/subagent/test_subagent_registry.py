@@ -1,6 +1,5 @@
 from pathlib import Path
-from typing import cast
-from unittest.mock import MagicMock, patch
+from unittest.mock import patch
 
 import pytest
 from pydantic import SecretStr
@@ -8,7 +7,6 @@ from pydantic import SecretStr
 from openhands.sdk import LLM, Agent
 from openhands.sdk.subagent.registry import (
     _reset_registry_for_tests,
-    agent_definition_to_factory,
     get_agent_factory,
     get_factory_info,
     register_agent,
@@ -34,6 +32,18 @@ def _make_test_llm() -> LLM:
         api_key=SecretStr("test-key"),
         usage_id="test-llm",
     )
+
+
+def _create_skill_file(skills_dir: Path, name: str, content: str) -> None:
+    """Create a skill .md file in the given skills directory."""
+    skill_file = skills_dir / f"{name}.md"
+    skill_file.write_text(
+        f"---\nname: {name}\ntriggers:\n  - {name}\n---\n\n{content}\n"
+    )
+
+
+def _dummy_factory(llm: LLM) -> Agent:
+    return Agent(llm=llm)
 
 
 def test_register_file_agents_project_priority(tmp_path: Path) -> None:
@@ -65,14 +75,9 @@ def test_register_file_agents_project_priority(tmp_path: Path) -> None:
 
 def test_register_file_agents_skips_programmatic(tmp_path: Path) -> None:
     """Does not overwrite agents registered programmatically."""
-
-    # Register an agent programmatically first
-    def existing_factory(llm: LLM) -> Agent:
-        return cast(Agent, MagicMock())
-
     register_agent(
         name="existing-agent",
-        factory_func=existing_factory,
+        factory_func=_dummy_factory,
         description="Programmatic version",
     )
 
@@ -95,14 +100,15 @@ def test_register_file_agents_skips_programmatic(tmp_path: Path) -> None:
     assert factory.definition.description == "Programmatic version"
 
 
-def test_register_plugin_agents() -> None:
+def test_register_plugin_agents(tmp_path: Path) -> None:
     """Plugin agents are registered via register_agent_if_absent."""
     plugin_agent = AgentDefinition(
         name="plugin-agent",
         description="From plugin",
         model="inherit",
-        tools=["ReadTool"],
+        tools=[],
         system_prompt="Plugin prompt.",
+        working_dir=str(tmp_path),
     )
 
     registered = register_plugin_agents([plugin_agent])
@@ -112,15 +118,12 @@ def test_register_plugin_agents() -> None:
     assert factory.definition.description == "From plugin"
 
 
-def test_register_plugin_agents_skips_existing() -> None:
+def test_register_plugin_agents_skips_existing(tmp_path: Path) -> None:
     """Plugin agents don't overwrite programmatically registered agents."""
-
-    def existing_factory(llm: LLM) -> Agent:
-        return cast(Agent, MagicMock())
 
     register_agent(
         name="my-agent",
-        factory_func=existing_factory,
+        factory_func=_dummy_factory,
         description="Programmatic",
     )
 
@@ -130,6 +133,7 @@ def test_register_plugin_agents_skips_existing() -> None:
         model="inherit",
         tools=[],
         system_prompt="",
+        working_dir=str(tmp_path),
     )
 
     registered = register_plugin_agents([plugin_agent])
@@ -141,17 +145,10 @@ def test_register_plugin_agents_skips_existing() -> None:
 
 def test_register_agent_if_absent_existing() -> None:
     """register_agent_if_absent returns False for existing agents."""
-
-    def factory1(llm: LLM) -> Agent:  # type: ignore[unused-argument]
-        return cast(Agent, MagicMock())
-
-    def factory2(llm: LLM) -> Agent:  # type: ignore[unused-argument]
-        return cast(Agent, MagicMock())
-
-    register_agent(name="dup_agent", factory_func=factory1, description="First")
+    register_agent(name="dup_agent", factory_func=_dummy_factory, description="First")
 
     result = register_agent_if_absent(
-        factory2, AgentDefinition(name="dup_agent", description="Second")
+        _dummy_factory, AgentDefinition(name="dup_agent", description="Second")
     )
     assert result is False
 
@@ -170,7 +167,7 @@ def test_agent_definition_to_factory_basic() -> None:
         system_prompt="You are a test agent.",
     )
 
-    factory = agent_definition_to_factory(agent_def)
+    factory = agent_def.to_factory()
     llm = _make_test_llm()
     agent = factory(llm)
 
@@ -192,7 +189,7 @@ def test_agent_definition_to_factory_model_inherit() -> None:
         system_prompt="Test prompt.",
     )
 
-    factory = agent_definition_to_factory(agent_def)
+    factory = agent_def.to_factory()
     llm = _make_test_llm()
     agent = factory(llm)
 
@@ -211,7 +208,7 @@ def test_agent_definition_to_factory_model_override() -> None:
         system_prompt="Test prompt.",
     )
 
-    factory = agent_definition_to_factory(agent_def)
+    factory = agent_def.to_factory()
     llm = _make_test_llm()
     agent = factory(llm)
 
@@ -229,11 +226,131 @@ def test_agent_definition_to_factory_no_system_prompt() -> None:
         system_prompt="",
     )
 
-    factory = agent_definition_to_factory(agent_def)
+    factory = agent_def.to_factory()
     llm = _make_test_llm()
     agent = factory(llm)
 
     assert agent.agent_context is None
+
+
+def test_agent_definition_to_factory_with_skills(tmp_path: Path) -> None:
+    """Factory resolves skill names and passes them to AgentContext."""
+    # Create a skill file in project directory
+    skills_dir = tmp_path / ".agents" / "skills"
+    skills_dir.mkdir(parents=True)
+    _create_skill_file(skills_dir, "test-skill", "Skill content here.")
+
+    agent_def = AgentDefinition(
+        name="skilled-agent",
+        description="Agent with skills",
+        model="inherit",
+        tools=[],
+        skills=["test-skill"],
+        system_prompt="You are a skilled agent.",
+        working_dir=str(tmp_path),
+    )
+
+    factory = agent_def.to_factory()
+    llm = _make_test_llm()
+    agent = factory(llm)
+
+    assert agent.agent_context is not None
+    assert len(agent.agent_context.skills) == 1
+    assert agent.agent_context.skills[0].name == "test-skill"
+    assert "Skill content here." in agent.agent_context.skills[0].content
+    assert agent.agent_context.system_message_suffix == "You are a skilled agent."
+
+
+def test_agent_definition_to_factory_skills_only_no_prompt(tmp_path: Path) -> None:
+    """Factory with skills but no system prompt still creates AgentContext."""
+    skills_dir = tmp_path / ".agents" / "skills"
+    skills_dir.mkdir(parents=True)
+    _create_skill_file(skills_dir, "only-skill", "Only skill content.")
+
+    agent_def = AgentDefinition(
+        name="skills-only-agent",
+        description="Agent with skills but no prompt",
+        model="inherit",
+        tools=[],
+        skills=["only-skill"],
+        system_prompt="",
+        working_dir=str(tmp_path),
+    )
+
+    factory = agent_def.to_factory()
+    llm = _make_test_llm()
+    agent = factory(llm)
+
+    assert agent.agent_context is not None
+    assert len(agent.agent_context.skills) == 1
+    assert agent.agent_context.skills[0].name == "only-skill"
+    assert agent.agent_context.system_message_suffix is None
+
+
+def test_agent_definition_to_factory_no_skills_no_prompt() -> None:
+    """Factory with no skills and no prompt creates no AgentContext."""
+    agent_def = AgentDefinition(
+        name="empty-agent",
+        description="No skills no prompt",
+        model="inherit",
+        tools=[],
+        skills=[],
+        system_prompt="",
+    )
+
+    factory = agent_def.to_factory()
+    llm = _make_test_llm()
+    agent = factory(llm)
+
+    assert agent.agent_context is None
+
+
+def test_agent_definition_to_factory_skill_not_found() -> None:
+    """Factory raises ValueError when a skill name is not found."""
+    agent_def = AgentDefinition(
+        name="missing-skill-agent",
+        description="Agent with missing skill",
+        model="inherit",
+        skills=["nonexistent-skill"],
+    )
+
+    with pytest.raises(
+        ValueError,
+        match="Skills not found but given to agent "
+        "'missing-skill-agent': nonexistent-skill",
+    ):
+        agent_def.to_factory()
+
+
+def test_agent_definition_to_factory_skills_project_over_user(tmp_path: Path) -> None:
+    """Project skills take priority over user skills with the same name."""
+    # Create project-level skill
+    project_skills_dir = tmp_path / ".agents" / "skills"
+    project_skills_dir.mkdir(parents=True)
+    _create_skill_file(project_skills_dir, "shared-skill", "Project version.")
+
+    # Create user-level skill with same name
+    user_home = tmp_path / "fake_home"
+    user_skills_dir = user_home / ".agents" / "skills"
+    user_skills_dir.mkdir(parents=True)
+    _create_skill_file(user_skills_dir, "shared-skill", "User version.")
+
+    agent_def = AgentDefinition(
+        name="priority-agent",
+        skills=["shared-skill"],
+        working_dir=str(tmp_path),
+    )
+
+    with patch("openhands.sdk.context.skills.skill.Path.home", return_value=user_home):
+        factory = agent_def.to_factory()
+
+    llm = _make_test_llm()
+    agent = factory(llm)
+
+    assert agent.agent_context is not None
+    assert len(agent.agent_context.skills) == 1
+    # Project version should win
+    assert "Project version." in agent.agent_context.skills[0].content
 
 
 def test_factory_info() -> None:
@@ -241,15 +358,12 @@ def test_factory_info() -> None:
     info = get_factory_info()
     assert "No user-registered agents" in info
 
-    # Register some agents
-    def factory_a(llm: LLM) -> Agent:  # type: ignore[unused-argument]
-        return cast(Agent, MagicMock())
-
-    def factory_b(llm: LLM) -> Agent:  # type: ignore[unused-argument]
-        return cast(Agent, MagicMock())
-
-    register_agent(name="alpha-agent", factory_func=factory_a, description="Alpha desc")
-    register_agent(name="beta-agent", factory_func=factory_b, description="Beta desc")
+    register_agent(
+        name="alpha-agent", factory_func=_dummy_factory, description="Alpha desc"
+    )
+    register_agent(
+        name="beta-agent", factory_func=_dummy_factory, description="Beta desc"
+    )
 
     info = get_factory_info()
     assert "No user-registered agents" not in info
@@ -268,19 +382,14 @@ def test_error_default_factory_empty(name: str | None) -> None:
 
 def test_register_and_retrieve_custom_agent_factory() -> None:
     """User-registered agent factories should be retrievable by name."""
-
-    def dummy_factory(llm: LLM) -> Agent:  # type: ignore[unused-argument]
-        return cast(Agent, MagicMock())
-
     register_agent(
         name="custom_agent",
-        factory_func=dummy_factory,
+        factory_func=_dummy_factory,
         description="Custom agent for testing",
     )
 
     factory = get_agent_factory("custom_agent")
     assert factory.definition.description == "Custom agent for testing"
-    assert factory.factory_func is dummy_factory
 
 
 def test_unknown_agent_type_raises_value_error() -> None:
@@ -293,12 +402,8 @@ def test_unknown_agent_type_raises_value_error() -> None:
 
 def test_register_agent_if_absent_new() -> None:
     """register_agent_if_absent returns True for new agents."""
-
-    def dummy_factory(llm: LLM) -> Agent:  # type: ignore[unused-argument]
-        return cast(Agent, MagicMock())
-
     result = register_agent_if_absent(
-        dummy_factory, AgentDefinition(name="new_agent", description="New agent")
+        _dummy_factory, AgentDefinition(name="new_agent", description="New agent")
     )
     assert result is True
 
@@ -325,7 +430,7 @@ def test_end_to_end_md_to_factory_to_registry(tmp_path: Path) -> None:
     assert agent_def.description == "End-to-end test agent"
 
     # Convert to factory
-    factory = agent_definition_to_factory(agent_def)
+    factory = agent_def.to_factory()
 
     # Register
     result = register_agent_if_absent(factory, agent_def)

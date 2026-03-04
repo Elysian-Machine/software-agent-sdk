@@ -269,7 +269,7 @@ class TestTaskManager:
             description="quiz",
             task_id=task_id,
             worker_agent=agent,
-            max_turns=None,
+            max_iteration_per_run=500,
             conversation_id=conversation_id,
         )
         assert isinstance(conv, LocalConversation)
@@ -283,7 +283,7 @@ class TestTaskManager:
 
         conv = manager._get_conversation(
             description=None,
-            max_turns=None,
+            max_iteration_per_run=500,
             task_id=task_id,
             worker_agent=agent,
             conversation_id=conversation_id,
@@ -302,7 +302,7 @@ class TestTaskManager:
 
         conv = manager._get_conversation(
             description="test",
-            max_turns=None,
+            max_iteration_per_run=500,
             task_id=task_id,
             conversation_id=conversation_id,
             worker_agent=agent,

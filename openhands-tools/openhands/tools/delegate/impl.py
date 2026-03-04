@@ -1,6 +1,8 @@
 """Implementation of delegate tool executor."""
 
+import os
 import threading
+from pathlib import Path
 from typing import TYPE_CHECKING
 
 from openhands.sdk.conversation.impl.local_conversation import LocalConversation
@@ -138,11 +140,28 @@ class DelegateExecutor(ToolExecutor):
                 if parent_visualizer is not None:
                     sub_visualizer = parent_visualizer.create_sub_visualizer(agent_id)
 
-                sub_conversation = LocalConversation(
-                    agent=worker_agent,
-                    workspace=workspace_path,
-                    visualizer=sub_visualizer,
-                )
+                # Resolve working directory: definition overrides parent
+                agent_working_dir = factory.definition.working_dir
+                if agent_working_dir is None:
+                    resolved_workspace = workspace_path
+                elif os.path.isabs(agent_working_dir):
+                    resolved_workspace = Path(agent_working_dir)
+                else:
+                    resolved_workspace = Path(workspace_path) / agent_working_dir
+
+                # Use max_iteration_per_run from agent definition if set
+                conv_kwargs: dict = {
+                    "agent": worker_agent,
+                    "workspace": resolved_workspace,
+                    "visualizer": sub_visualizer,
+                }
+
+                if factory.definition.max_iteration_per_run is not None:
+                    conv_kwargs["max_iteration_per_run"] = (
+                        factory.definition.max_iteration_per_run
+                    )
+
+                sub_conversation = LocalConversation(**conv_kwargs)
 
                 self._sub_agents[agent_id] = sub_conversation
 

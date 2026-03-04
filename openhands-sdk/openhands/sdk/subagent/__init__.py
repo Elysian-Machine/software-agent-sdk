@@ -4,7 +4,6 @@ from openhands.sdk.subagent.load import (
     load_user_agents,
 )
 from openhands.sdk.subagent.registry import (
-    agent_definition_to_factory,
     get_agent_factory,
     get_factory_info,
     register_agent,
@@ -29,5 +28,4 @@ __all__ = [
     "get_agent_factory",
     # Agent def and factory
     "AgentDefinition",
-    "agent_definition_to_factory",
 ]

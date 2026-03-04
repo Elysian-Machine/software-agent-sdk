@@ -1,25 +1,37 @@
 """
 Simple API for users to register custom agents.
 
-Example usage:
+Preferred usage (declarative, from an AgentDefinition)::
+
+    from openhands.sdk import register_agent
+    from openhands.sdk.subagent import AgentDefinition
+
+    register_agent(AgentDefinition(
+        name="security_expert",
+        description="Expert in security analysis and vulnerability assessment",
+        tools=["TerminalTool"],
+        system_prompt="You are a cybersecurity expert.",
+    ))
+
+Legacy usage (imperative, with a factory function)::
+
     from openhands.sdk import register_agent, Agent, AgentContext
     from openhands.sdk.tool.spec import Tool
 
-    # Define a custom security expert factory
     def create_security_expert(llm):
         tools = [Tool(name="TerminalTool")]
         agent_context = AgentContext(
             system_message_suffix=(
-                "You are a cybersecurity expert. Always consider security implications."
+                "You are a cybersecurity expert."
+                "Always consider security implications."
             ),
         )
         return Agent(llm=llm, tools=tools, agent_context=agent_context)
 
-    # Register the agent with a description
     register_agent(
         name="security_expert",
         factory_func=create_security_expert,
-        description="Expert in security analysis and vulnerability assessment"
+        description="Expert in security analysis and vulnerability assessment",
     )
 """
 
@@ -28,14 +40,12 @@ from pathlib import Path
 from threading import RLock
 from typing import TYPE_CHECKING, NamedTuple
 
-from pydantic import SecretStr
-
 from openhands.sdk.logger import get_logger
 from openhands.sdk.subagent.load import (
     load_project_agents,
     load_user_agents,
 )
-from openhands.sdk.subagent.schema import AgentDefinition
+from openhands.sdk.subagent.schema import AgentDefinition, AgentFactoryFunc
 
 
 if TYPE_CHECKING:
@@ -59,7 +69,7 @@ _registry_lock = RLock()
 
 def register_agent(
     name: str,
-    factory_func: Callable[["LLM"], "Agent"],
+    factory_func: AgentFactoryFunc,
     description: str,
 ) -> None:
     """
@@ -73,27 +83,17 @@ def register_agent(
     Raises:
         ValueError: If an agent with the same name already exists
     """
-    try:
-        from openhands.sdk.llm.llm import LLM as _LLM
-
-        _model_placeholder = "__introspect__"
-        agent = factory_func(_LLM(model=_model_placeholder, api_key=SecretStr("n/a")))
-        definition = AgentDefinition.from_agent(
-            agent, name=name, description=description
-        )
-        # If the model was our placeholder, the factory didn't set one explicitly
-        if definition.model == _model_placeholder:
-            definition = definition.model_copy(update={"model": "inherit"})
-    except Exception:
-        logger.debug(f"Could not introspect factory for agent '{name}'")
-        definition = AgentDefinition(name=name, description=description)
-
+    definition = AgentDefinition.from_factory_func(
+        name=name,
+        factory_func=factory_func,
+        description=description,
+    )
     with _registry_lock:
         if name in _agent_factories:
-            raise ValueError(f"Agent '{name}' already registered")
+            raise ValueError(f"Agent '{definition.name}' already registered")
 
-        _agent_factories[name] = AgentFactory(
-            factory_func=factory_func,
+        _agent_factories[definition.name] = AgentFactory(
+            factory_func=definition.to_factory(),
             definition=definition,
         )
 
@@ -125,62 +125,6 @@ def register_agent_if_absent(
             factory_func=factory_func, definition=definition
         )
         return True
-
-
-def agent_definition_to_factory(
-    agent_def: AgentDefinition,
-) -> Callable[["LLM"], "Agent"]:
-    """Create an agent factory closure from an `AgentDefinition`.
-
-    The returned callable accepts an `LLM` instance (the parent agent's LLM)
-    and builds a fully-configured `Agent` instance.
-
-    - Tool names from `agent_def.tools` are mapped to `Tool` objects.
-    - The system prompt is set as the `system_message_suffix` on the
-      `AgentContext`.
-    - `model: inherit` preserves the parent LLM; an explicit model name
-      creates a copy via `model_copy(update=...)`.
-
-    Raises:
-        ValueError: If a tool provided to the agent is not registered.
-    """
-
-    def _factory(llm: "LLM") -> "Agent":
-        from openhands.sdk.agent.agent import Agent
-        from openhands.sdk.context.agent_context import AgentContext
-        from openhands.sdk.tool.registry import list_registered_tools
-        from openhands.sdk.tool.spec import Tool
-
-        # Handle model override
-        if agent_def.model and agent_def.model != "inherit":
-            llm = llm.model_copy(update={"model": agent_def.model})
-
-        # the system prompt of the subagent is added as a suffix of the
-        # main system prompt
-        agent_context = (
-            AgentContext(system_message_suffix=agent_def.system_prompt)
-            if agent_def.system_prompt
-            else None
-        )
-
-        # Resolve tools
-        tools: list[Tool] = []
-        registered_tools: set[str] = set(list_registered_tools())
-        for tool_name in agent_def.tools:
-            if tool_name not in registered_tools:
-                raise ValueError(
-                    f"Tool '{tool_name}' not registered"
-                    f"but was given to agent {agent_def.name}."
-                )
-            tools.append(Tool(name=tool_name))
-
-        return Agent(
-            llm=llm,
-            tools=tools,
-            agent_context=agent_context,
-        )
-
-    return _factory
 
 
 def register_file_agents(work_dir: str | Path) -> list[str]:
@@ -215,7 +159,7 @@ def register_file_agents(work_dir: str | Path) -> list[str]:
 
     registered: list[str] = []
     for agent_def in deduplicated:
-        factory = agent_definition_to_factory(agent_def)
+        factory = agent_def.to_factory()
         if not agent_def.description:
             agent_def = agent_def.model_copy(
                 update={"description": f"File-based agent: {agent_def.name}"}
@@ -231,7 +175,9 @@ def register_file_agents(work_dir: str | Path) -> list[str]:
     return registered
 
 
-def register_plugin_agents(agents: list[AgentDefinition]) -> list[str]:
+def register_plugin_agents(
+    agents: list[AgentDefinition],
+) -> list[str]:
     """Register plugin-provided agent definitions into the delegate registry.
 
     Plugin agents have higher priority than file-based agents but lower than
@@ -247,7 +193,7 @@ def register_plugin_agents(agents: list[AgentDefinition]) -> list[str]:
     """
     registered: list[str] = []
     for agent_def in agents:
-        factory = agent_definition_to_factory(agent_def)
+        factory = agent_def.to_factory()
         if not agent_def.description:
             agent_def = agent_def.model_copy(
                 update={"description": f"Plugin agent: {agent_def.name}"}
