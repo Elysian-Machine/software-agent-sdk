@@ -127,10 +127,10 @@ MODELS = {
         "display_name": "GPT-5.2 Codex",
         "llm_config": {"model": "litellm_proxy/gpt-5.2-codex"},
     },
-    "gpt-5-3-codex": {
-        "id": "gpt-5-3-codex",
+    "gpt-5.3-codex": {
+        "id": "gpt-5.3-codex",
         "display_name": "GPT-5.3 Codex",
-        "llm_config": {"model": "litellm_proxy/gpt-5-3-codex"},
+        "llm_config": {"model": "litellm_proxy/gpt-5.3-codex"},
     },
     "gpt-5.2-high-reasoning": {
         "id": "gpt-5.2-high-reasoning",
