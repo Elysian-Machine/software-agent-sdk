@@ -66,11 +66,16 @@ def main():
     # This loads any SKILL.md files following the AgentSkills standard
     repo_skills, knowledge_skills, local_skills = load_skills_from_dir(local_skills_dir)
 
-    print(f"\nLoaded local skills:")
+    print("\nLoaded local skills:")
     for name, skill in local_skills.items():
         print(f"  - {name}: {skill.description or 'No description'}")
         if skill.trigger:
-            print(f"    Triggers: {skill.trigger.keywords}")
+            # KeywordTrigger has 'keywords', TaskTrigger has 'triggers'
+            trigger_values = getattr(skill.trigger, "keywords", None) or getattr(
+                skill.trigger, "triggers", None
+            )
+            if trigger_values:
+                print(f"    Triggers: {trigger_values}")
 
     # =========================================================================
     # Part 2: Loading Remote Skills from OpenHands/extensions
