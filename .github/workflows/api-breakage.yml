@@ -23,18 +23,6 @@ jobs:
                   enable-cache: true
             - name: Install workspace deps (dev)
               run: uv sync --frozen --group dev
-            - name: Debug GitHub context (test-only)
-              if: ${{ always() && github.event_name == 'pull_request' }}
-              run: |
-                  echo "github.head_ref=${{ github.head_ref }}"
-                  echo "github.ref=${{ github.ref }}"
-                  echo "github.ref_name=${{ github.ref_name }}"
-                  echo "github.event.pull_request.head.ref=${{ github.event.pull_request.head.ref }}"
-                  echo "github.event.pull_request.head.repo.full_name=${{ github.event.pull_request.head.repo.full_name }}"
-                  echo "github.event.pull_request.number=${{ github.event.pull_request.number }}"
-                  echo "startsWith(head_ref, 'rel-')=${{ startsWith(github.head_ref, 'rel-') }}"
-                  echo "continue_on_error_expr=${{ !startsWith(github.head_ref, 'rel-') }}"
-
             - name: Run SDK API breakage check
               id: api_breakage
               # Release PRs (rel-*) must block on breakage.
