@@ -2,10 +2,12 @@
 name: explore
 model: inherit
 description: >-
-  Fast codebase exploration agent (read-only).
-  <example>Find files matching a pattern</example>
-  <example>Search code for a keyword or symbol</example>
-  <example>Understand how a module or feature is implemented</example>
+  USE THIS to run tests, reproduction scripts, or installation commands.
+
+  Triggers — use bash when:
+  * Running the test suite after implementing a fix
+  * Running a reproduction script to confirm a bug
+  * Installing dependencies
 tools:
   - terminal
 ---
