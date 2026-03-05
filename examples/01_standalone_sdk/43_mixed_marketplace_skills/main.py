@@ -9,15 +9,15 @@ This pattern is useful for teams that want to:
 - Leverage the public OpenHands skills repository
 - Create a curated skill set for their specific workflows
 
-The marketplace is defined in .plugin/marketplace.json and includes:
-- greeting-helper: A local skill in ./local_skills/greeting-helper/
+The marketplace is defined in .plugin/plugin.json and includes:
+- greeting-helper: A local skill in ./skills/greeting-helper/
 - github: A remote skill from OpenHands/extensions
 
 Directory Structure:
     43_mixed_marketplace_skills/
     ├── .plugin/
     │   └── marketplace.json     # Marketplace definition
-    ├── local_skills/
+    ├── skills/
     │   └── greeting-helper/
     │       └── SKILL.md         # Local skill content
     ├── main.py                  # This file
@@ -51,7 +51,7 @@ from openhands.tools.terminal import TerminalTool
 def main():
     # Get the directory containing this script
     script_dir = Path(__file__).parent
-    local_skills_dir = script_dir / "local_skills"
+    skills_dir = script_dir / "skills"
 
     # =========================================================================
     # Part 1: Loading Local Skills
@@ -60,14 +60,14 @@ def main():
     print("Part 1: Loading Local Skills from Directory")
     print("=" * 80)
 
-    print(f"\nLoading local skills from: {local_skills_dir}")
+    print(f"\nLoading local skills from: {skills_dir}")
 
     # Load skills from the local directory
     # This loads any SKILL.md files following the AgentSkills standard
-    repo_skills, knowledge_skills, local_skills = load_skills_from_dir(local_skills_dir)
+    repo_skills, knowledge_skills, skills = load_skills_from_dir(skills_dir)
 
     print("\nLoaded local skills:")
-    for name, skill in local_skills.items():
+    for name, skill in skills.items():
         print(f"  - {name}: {skill.description or 'No description'}")
         if skill.trigger:
             # KeywordTrigger has 'keywords', TaskTrigger has 'triggers'
@@ -113,7 +113,7 @@ def main():
     combined_skills.extend(public_skills)
 
     # Add local skills (higher precedence - will override if same name)
-    for name, skill in local_skills.items():
+    for name, skill in skills.items():
         if name in public_skill_names:
             # Remove the public skill and add the local one
             combined_skills = [s for s in combined_skills if s.name != name]
@@ -121,11 +121,11 @@ def main():
         combined_skills.append(skill)
 
     print(f"\nTotal combined skills: {len(combined_skills)}")
-    print(f"  - Local skills: {len(local_skills)}")
+    print(f"  - Local skills: {len(skills)}")
     print(f"  - Public skills: {len(public_skills)}")
 
     # Show the combined skill set
-    local_names = set(local_skills.keys())
+    local_names = set(skills.keys())
     print("\nSkills by source:")
     print(f"  Local: {list(local_names)}")
     print(f"  Remote (first 5): {[s.name for s in public_skills[:5]]}")

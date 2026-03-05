@@ -5,7 +5,7 @@ This example demonstrates how to create a **marketplace that combines local and 
 ## Overview
 
 The example includes:
-- A **local skill** (`greeting-helper`) hosted in the `local_skills/` directory
+- A **local skill** (`greeting-helper`) hosted in the `skills/` directory
 - Access to **remote skills** from the [OpenHands/extensions](https://github.com/OpenHands/extensions) repository
 
 This pattern is useful for:
@@ -19,7 +19,7 @@ This pattern is useful for:
 43_mixed_marketplace_skills/
 ├── .plugin/
 │   └── marketplace.json     # Marketplace definition (includes local + remote)
-├── local_skills/
+├── skills/
 │   └── greeting-helper/
 │       └── SKILL.md         # Local skill following AgentSkills format
 ├── main.py                  # Main example script
@@ -36,7 +36,7 @@ The `.plugin/marketplace.json` file defines the marketplace:
     "description": "Example marketplace combining local and remote skills",
     "owner": {"name": "OpenHands SDK Examples"},
     "metadata": {
-        "pluginRoot": "./local_skills"
+        "pluginRoot": "./skills"
     },
     "plugins": [
         {"name": "greeting-helper", "source": "./greeting-helper"}
@@ -51,7 +51,7 @@ The `.plugin/marketplace.json` file defines the marketplace:
 
 ## How It Works
 
-1. **Local Skills Loading**: Skills from `local_skills/` are loaded using `load_skills_from_dir()`
+1. **Local Skills Loading**: Skills from `skills/` are loaded using `load_skills_from_dir()`
 2. **Remote Skills Loading**: Skills from OpenHands/extensions are loaded using `load_public_skills()`
 3. **Skill Merging**: Both are combined with local skills taking precedence
 4. **Agent Context**: The combined skill set is provided to the agent
@@ -76,7 +76,7 @@ python main.py
 Part 1: Loading Local Skills from Directory
 ================================================================================
 
-Loading local skills from: /path/to/local_skills
+Loading local skills from: /path/to/skills
 
 Loaded local skills:
   - greeting-helper: A local skill that helps generate creative greetings
@@ -103,7 +103,7 @@ Total combined skills: 34
 
 ## Creating Your Own Mixed Marketplace
 
-1. Create a `local_skills/` directory with your custom skills
+1. Create a `skills/` directory with your custom skills
 2. Add a `.plugin/marketplace.json` to define the marketplace
 3. Use `load_skills_from_dir()` for local skills
 4. Use `load_public_skills()` for remote skills
