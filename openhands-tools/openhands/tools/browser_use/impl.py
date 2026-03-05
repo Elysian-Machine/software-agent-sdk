@@ -7,10 +7,15 @@ import json
 import logging
 import os
 import shutil
+import socket
 import subprocess
-from collections.abc import Callable, Coroutine
+import sys
+import tempfile
+import time
+from collections.abc import Callable, Coroutine, Iterable
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, TypeVar
+from urllib.request import urlopen
 
 
 if TYPE_CHECKING:
@@ -131,6 +136,93 @@ def _get_chromium_error_message() -> str:
     )
 
 
+def _find_free_port() -> int:
+    with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as sock:
+        sock.bind(("127.0.0.1", 0))
+        return sock.getsockname()[1]
+
+
+def _supports_cdp(binary_path: str, timeout_seconds: float = 2.0) -> bool:
+    port = _find_free_port()
+    with tempfile.TemporaryDirectory() as profile_dir:
+        try:
+            proc = subprocess.Popen(
+                [
+                    binary_path,
+                    "--headless",
+                    "--disable-gpu",
+                    "--no-first-run",
+                    "--no-default-browser-check",
+                    f"--user-data-dir={profile_dir}",
+                    f"--remote-debugging-port={port}",
+                    "about:blank",
+                ],
+                stdout=subprocess.DEVNULL,
+                stderr=subprocess.DEVNULL,
+            )
+        except OSError:
+            return False
+
+        try:
+            deadline = time.monotonic() + timeout_seconds
+            url = f"http://127.0.0.1:{port}/json/version"
+            while time.monotonic() < deadline:
+                try:
+                    with urlopen(url, timeout=0.2) as response:
+                        payload = json.load(response)
+                    return "webSocketDebuggerUrl" in payload
+                except Exception:
+                    time.sleep(0.05)
+            return False
+        finally:
+            proc.terminate()
+            try:
+                proc.wait(timeout=1)
+            except subprocess.TimeoutExpired:
+                proc.kill()
+
+
+def _iter_standard_chromium_paths() -> Iterable[Path]:
+    yield from (
+        Path("/usr/bin/google-chrome"),
+        Path("/usr/bin/google-chrome-stable"),
+        Path("/usr/bin/chromium"),
+        Path("/usr/bin/chromium-browser"),
+    )
+
+    if sys.platform == "darwin":
+        apps_dir = Path("/Applications")
+        for pattern in (
+            "Google Chrome*.app/Contents/MacOS/Google Chrome*",
+            "Chromium*.app/Contents/MacOS/Chromium*",
+        ):
+            yield from apps_dir.glob(pattern)
+
+
+def _iter_playwright_chromium_paths() -> Iterable[Path]:
+    cache_roots = (
+        Path.home() / ".cache" / "ms-playwright",  # Linux
+        Path.home() / "Library" / "Caches" / "ms-playwright",  # macOS
+    )
+    patterns = (
+        "chromium-*/chrome-linux*/chrome",
+        "chromium-*/chrome-mac*/Chromium.app/Contents/MacOS/Chromium",
+        "chromium-*/chrome-mac*/Google Chrome for Testing.app/Contents/MacOS/"
+        "Google Chrome for Testing",
+    )
+    for cache_root in cache_roots:
+        if not cache_root.exists():
+            continue
+        for pattern in patterns:
+            yield from cache_root.glob(pattern)
+
+
+def _iter_path_chromium_paths() -> Iterable[Path]:
+    for binary in ("google-chrome", "chrome", "chromium", "chromium-browser"):
+        if path := shutil.which(binary):
+            yield Path(path)
+
+
 class BrowserToolExecutor(ToolExecutor[BrowserAction, BrowserObservation]):
     """Executor that wraps browser-use MCP server for OpenHands integration."""
 
@@ -149,66 +241,23 @@ class BrowserToolExecutor(ToolExecutor[BrowserAction, BrowserObservation]):
         Returns:
             Path to Chromium binary if found, None otherwise
         """
-        # Check standard installation paths (prefer full Chrome installs)
-        standard_paths = [
-            # Linux
-            "/usr/bin/google-chrome",
-            "/usr/bin/google-chrome-stable",
-            "/usr/bin/chromium",
-            "/usr/bin/chromium-browser",
-            # macOS
-            "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome",
-            "/Applications/Chromium.app/Contents/MacOS/Chromium",
-        ]
-        for install_path in standard_paths:
-            p = Path(install_path)
-            if p.exists():
-                return str(p)
+        seen: set[str] = set()
 
-        # Check Playwright-installed Chromium (preferred over PATH lookups
-        # because PATH binaries like homebrew chromium may lack CDP support)
-        playwright_cache_candidates = [
-            Path.home() / ".cache" / "ms-playwright",  # Linux
-            Path.home() / "Library" / "Caches" / "ms-playwright",  # macOS
-        ]
+        def check_candidates(candidates: Iterable[Path]) -> str | None:
+            for candidate in candidates:
+                candidate_str = str(candidate)
+                if candidate_str in seen:
+                    continue
+                seen.add(candidate_str)
+                if candidate.exists() and _supports_cdp(candidate_str):
+                    return candidate_str
+            return None
 
-        for playwright_cache in playwright_cache_candidates:
-            if playwright_cache.exists():
-                chromium_dirs = list(playwright_cache.glob("chromium-*"))
-                for chromium_dir in chromium_dirs:
-                    # Check platform-specific paths
-                    possible_paths = [
-                        chromium_dir / "chrome-linux" / "chrome",  # Linux (old)
-                        chromium_dir / "chrome-linux64" / "chrome",  # Linux (new)
-                        chromium_dir
-                        / "chrome-mac"
-                        / "Chromium.app"
-                        / "Contents"
-                        / "MacOS"
-                        / "Chromium",  # macOS (old)
-                        chromium_dir
-                        / "chrome-mac-arm64"
-                        / "Google Chrome for Testing.app"
-                        / "Contents"
-                        / "MacOS"
-                        / "Google Chrome for Testing",  # macOS arm64
-                        chromium_dir
-                        / "chrome-mac"
-                        / "Google Chrome for Testing.app"
-                        / "Contents"
-                        / "MacOS"
-                        / "Google Chrome for Testing",  # macOS x64
-                    ]
-                    for p in possible_paths:
-                        if p.exists():
-                            return str(p)
-
-        # Fallback: check PATH for any chromium-based binary
-        for binary in ("google-chrome", "chrome", "chromium", "chromium-browser"):
-            if path := shutil.which(binary):
-                return path
-
-        return None
+        return (
+            check_candidates(_iter_standard_chromium_paths())
+            or check_candidates(_iter_playwright_chromium_paths())
+            or check_candidates(_iter_path_chromium_paths())
+        )
 
     def _ensure_chromium_available(self) -> str:
         """Ensure Chromium is available for browser operations.
