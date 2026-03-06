@@ -579,16 +579,31 @@ def build(opts: BuildOptions) -> list[str]:
     cache_args: list[str] = []
 
     if push:
-        # Remote/CI builds: use registry cache + inline for maximum reuse.
+        # Remote/CI builds: use registry cache if driver supports it.
+        # The docker driver doesn't support --cache-to type=registry, only
+        # docker-container, kubernetes, and remote drivers do.
+        # See: https://docs.docker.com/build/cache/backends/
+        supports_cache_export = driver in ("docker-container", "kubernetes", "remote")
         cache_args += [
             "--cache-from",
             f"type=registry,ref={opts.image}:{cache_tag}",
             "--cache-from",
             f"type=registry,ref={opts.image}:{cache_tag_base}-main",
-            "--cache-to",
-            f"type=registry,ref={opts.image}:{cache_tag},mode=max",
         ]
-        logger.info("[build] Cache: registry (remote/CI) + inline")
+        if supports_cache_export:
+            cache_args += [
+                "--cache-to",
+                f"type=registry,ref={opts.image}:{cache_tag},mode=max",
+            ]
+            logger.info(f"[build] Cache: registry with export (driver={driver})")
+        else:
+            # Fallback to inline cache metadata only
+            cache_args += ["--build-arg", "BUILDKIT_INLINE_CACHE=1"]
+            logger.warning(
+                f"[build] WARNING: driver '{driver}' does not support registry "
+                "cache export. Using inline cache only. Builds will be slower.\n"
+                "To enable registry cache export, configure a docker-container driver."
+            )
     else:
         # Local/dev builds: prefer local dir cache if
         # driver supports it; otherwise inline-only.
