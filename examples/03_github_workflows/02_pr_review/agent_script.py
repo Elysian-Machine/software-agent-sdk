@@ -732,13 +732,15 @@ def _build_secrets(github_token: str | None) -> dict[str, str]:
 def _run_cloud_mode(
     prompt: str,
     skill_trigger: str,
-    github_token: str | None,
 ) -> None:
     """Run the PR review agent on OpenHands Cloud.
 
     In cloud mode, the agent runs asynchronously on OpenHands Cloud.
     The LLM is configured on the Cloud side, so no LLM_API_KEY is needed.
     Once the run is triggered, this function returns immediately.
+
+    GITHUB_TOKEN is intentionally NOT passed to cloud mode so that the
+    review is posted by the OpenHands Cloud GitHub App, not the token owner.
     """
     from openhands.workspace import OpenHandsCloudWorkspace
 
@@ -756,10 +758,12 @@ def _run_cloud_mode(
 
     try:
         agent = _build_agent(llm, workspace.working_dir)
+        # Do not pass GITHUB_TOKEN — cloud mode relies on the OpenHands
+        # Cloud GitHub App for posting reviews.
         conversation = Conversation(
             agent=agent,
             workspace=workspace,
-            secrets=_build_secrets(github_token),
+            secrets=_build_secrets(github_token=None),
         )
 
         logger.info("Starting PR review on OpenHands Cloud...")
@@ -961,7 +965,6 @@ def main():
             _run_cloud_mode(
                 prompt=prompt,
                 skill_trigger=skill_trigger,
-                github_token=github_token,
             )
         else:
             _run_local_mode(
