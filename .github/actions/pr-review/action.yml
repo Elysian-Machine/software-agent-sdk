@@ -94,14 +94,8 @@ runs:
 
         - name: Install OpenHands dependencies
           shell: bash
-          env:
-              MODE: ${{ inputs.mode }}
           run: |
-              PACKAGES="./software-agent-sdk/openhands-sdk ./software-agent-sdk/openhands-tools lmnr"
-              if [ "$MODE" = "cloud" ]; then
-                PACKAGES="$PACKAGES ./software-agent-sdk/openhands-workspace"
-              fi
-              uv pip install --system $PACKAGES
+              uv pip install --system ./software-agent-sdk/openhands-sdk ./software-agent-sdk/openhands-tools lmnr
 
         - name: Check required configuration and select model
           id: select-model

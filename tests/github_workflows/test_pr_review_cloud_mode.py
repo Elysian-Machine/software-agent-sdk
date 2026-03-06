@@ -72,9 +72,10 @@ def test_main_cloud_mode_does_not_require_llm_api_key():
     ):
         main()
         mock_cloud.assert_called_once()
-        # Verify the call includes prompt but NOT github_token
         call_kwargs = mock_cloud.call_args[1]
         assert "prompt" in call_kwargs
+        assert "pr_info" in call_kwargs
+        # GITHUB_TOKEN is NOT forwarded to cloud mode
         assert "github_token" not in call_kwargs
 
 
