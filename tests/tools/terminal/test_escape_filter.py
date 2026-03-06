@@ -35,6 +35,36 @@ class TestFilterTerminalQueries:
         result = filter_terminal_queries(output)
         assert result == "startend"
 
+    def test_osc_4_palette_with_index_query_removed(self):
+        """OSC 4 with palette index (e.g., color 5) should be removed."""
+        output = "start\x1b]4;5;?\x07end"
+        result = filter_terminal_queries(output)
+        assert result == "startend"
+
+    def test_osc_12_cursor_color_query_removed(self):
+        """OSC 12 (cursor color query) should be removed."""
+        output = "start\x1b]12;?\x07end"
+        result = filter_terminal_queries(output)
+        assert result == "startend"
+
+    def test_osc_17_highlight_query_removed(self):
+        """OSC 17 (highlight background query) should be removed."""
+        output = "start\x1b]17;?\x07end"
+        result = filter_terminal_queries(output)
+        assert result == "startend"
+
+    def test_osc_set_title_preserved(self):
+        """OSC 0 (set window title) should NOT be removed - it's a SET, not query."""
+        output = "start\x1b]0;My Window Title\x07end"
+        result = filter_terminal_queries(output)
+        assert result == output  # Preserved as-is
+
+    def test_osc_hyperlink_preserved(self):
+        """OSC 8 (hyperlink) should NOT be removed."""
+        output = "start\x1b]8;;https://example.com\x07link\x1b]8;;\x07end"
+        result = filter_terminal_queries(output)
+        assert result == output  # Preserved as-is
+
     def test_osc_with_st_terminator_removed(self):
         """OSC queries with ST terminator should be removed."""
         # ST terminator is \x1b\\

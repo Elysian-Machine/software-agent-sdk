@@ -25,17 +25,23 @@ import re
 _DSR_PATTERN = re.compile(rb"\x1b\[6n")
 
 # OSC (Operating System Command) queries
-# Format: ESC ] Ps ; Pt (BEL | ST)
-# Common queries:
+# Format: ESC ] Ps ; ? (BEL | ST)
+# The ";?" pattern indicates a QUERY (vs SET which has actual values)
+# Examples:
 #   OSC 10 ; ? - foreground color query
 #   OSC 11 ; ? - background color query
 #   OSC 4 ; index ; ? - palette color query
+#   OSC 12 ; ? - cursor color query
+#   OSC 17 ; ? - highlight background query
 # Terminators: BEL (\x07) or ST (ESC \)
+#
+# This pattern matches ANY OSC query (ending with ;?) rather than
+# specific codes, making it future-proof for other query types.
 _OSC_QUERY_PATTERN = re.compile(
     rb"\x1b\]"  # OSC introducer
-    rb"(?:10|11|4)"  # Color query codes (10=fg, 11=bg, 4=palette)
-    rb"[^"  # Match until terminator
-    rb"\x07\x1b]*"  # (not BEL or ESC)
+    rb"\d+"  # Parameter number (10, 11, 4, 12, etc.)
+    rb"(?:;[^;\x07\x1b]*)?"  # Optional sub-parameter (e.g., palette index)
+    rb";\?"  # Query marker - the key indicator this is a query
     rb"(?:\x07|\x1b\\)"  # BEL or ST terminator
 )
 
