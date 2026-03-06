@@ -9,8 +9,12 @@ from typing import Any
 
 from openhands.sdk import get_logger
 from openhands.sdk.tool import Tool
-from openhands.tools.preset.default import get_default_tools
-from tests.integration.base import BaseIntegrationTest, SkipTest
+from tests.integration.base import (
+    BaseIntegrationTest,
+    SkipTest,
+    ToolPresetType,
+    get_tools_for_preset,
+)
 from tests.integration.early_stopper import EarlyStopperBase
 
 
@@ -82,14 +86,9 @@ def clone_pinned_software_agent_repo(workspace: str) -> Path:
     return repo_dir
 
 
-def default_behavior_tools(enable_browser: bool = False) -> list[Tool]:
-    """Return the default tools for behavior tests using the default preset.
-
-    Args:
-        enable_browser: Whether to include browser tools. Defaults to False
-            for behavior tests since they typically don't need browsing.
-    """
-    return get_default_tools(enable_browser=enable_browser)
+def default_behavior_tools(tool_preset: ToolPresetType = "default") -> list[Tool]:
+    """Return the default tools for behavior tests based on the tool preset."""
+    return get_tools_for_preset(tool_preset, enable_browser=False)
 
 
 ENVIRONMENT_TIPS_BODY = """\
@@ -119,13 +118,14 @@ class SoftwareAgentSDKBehaviorTest(BaseIntegrationTest):
         llm_config: dict[str, Any],
         instance_id: str,
         workspace: str,
+        tool_preset: ToolPresetType = "default",
     ):
-        super().__init__(instruction, llm_config, instance_id, workspace)
+        super().__init__(instruction, llm_config, instance_id, workspace, tool_preset)
         self.repo_dir = None
 
     @property
     def tools(self) -> list[Tool]:
-        return default_behavior_tools()
+        return default_behavior_tools(self.tool_preset)
 
     def get_early_stopper(self) -> EarlyStopperBase | None:
         """Override in subclasses to provide an early stopper for this test.
