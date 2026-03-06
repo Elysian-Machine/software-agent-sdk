@@ -7,7 +7,7 @@ import os
 import threading
 import warnings
 from collections.abc import Callable, Sequence
-from concurrent.futures import CancelledError as FutureCancelledError, Future
+from concurrent.futures import Future
 from contextlib import contextmanager
 from typing import TYPE_CHECKING, Any, ClassVar, Literal, get_args, get_origin
 
@@ -82,7 +82,6 @@ from litellm.utils import (
 )
 
 from openhands.sdk.llm.exceptions import (
-    LLMCancelledError,
     LLMContextWindowTooSmallError,
     LLMNoResponseError,
     map_provider_exception,
@@ -93,6 +92,7 @@ from openhands.sdk.llm.llm_response import LLMResponse
 from openhands.sdk.llm.message import (
     Message,
 )
+from openhands.sdk.llm.mixins.async_cancellation import AsyncCancellationMixin
 from openhands.sdk.llm.mixins.non_native_fc import NonNativeToolCallingMixin
 from openhands.sdk.llm.options.chat_options import select_chat_options
 from openhands.sdk.llm.options.responses_options import select_responses_options
@@ -137,13 +137,13 @@ ENV_ALLOW_SHORT_CONTEXT_WINDOWS: Final[str] = "ALLOW_SHORT_CONTEXT_WINDOWS"
 DEFAULT_MAX_OUTPUT_TOKENS_CAP: Final[int] = 16384
 
 
-class LLM(BaseModel, RetryMixin, NonNativeToolCallingMixin):
+class LLM(BaseModel, RetryMixin, NonNativeToolCallingMixin, AsyncCancellationMixin):
     """Language model interface for OpenHands agents.
 
     The LLM class provides a unified interface for interacting with various
     language models through the litellm library. It handles model configuration,
-    API authentication,
-    retry logic, and tool calling capabilities.
+    API authentication, retry logic, tool calling capabilities, and async
+    cancellation support.
 
     Example:
         >>> from openhands.sdk import LLM
@@ -640,66 +640,14 @@ class LLM(BaseModel, RetryMixin, NonNativeToolCallingMixin):
         new_llm._is_subscription = self._is_subscription
         new_llm._litellm_provider = self._litellm_provider
 
-        # Reset async state - will be lazily recreated
-        new_llm._async_loop = None
-        new_llm._async_loop_thread = None
-        new_llm._current_future = None
-        new_llm._task_lock = threading.Lock()
+        # Reset async state via mixin - will be lazily recreated
+        new_llm._reset_async_state()
 
         return new_llm
 
     # =========================================================================
-    # Cancellation support
+    # Cancellation support (delegates to AsyncCancellationMixin)
     # =========================================================================
-    def _ensure_async_loop(self) -> asyncio.AbstractEventLoop:
-        """Lazily create background event loop thread for interruptible calls.
-
-        The event loop runs in a daemon thread and is used to execute async
-        LLM calls. This allows synchronous callers to use async internally
-        while supporting immediate cancellation via Task.cancel().
-        """
-        if self._async_loop is None:
-            self._async_loop = asyncio.new_event_loop()
-            self._async_loop_thread = threading.Thread(
-                target=self._async_loop.run_forever,
-                daemon=True,
-                name=f"llm-async-{self.usage_id}",
-            )
-            self._async_loop_thread.start()
-            logger.debug(f"Started async event loop thread for LLM {self.usage_id}")
-        return self._async_loop
-
-    def cancel(self) -> None:
-        """Cancel any in-flight LLM call (best effort).
-
-        This method cancels the current LLM call immediately. The cancellation
-        will take effect at the next await point in the LLM call.
-
-        Can be called from any thread. After cancellation, the LLM can be
-        used for new calls - the cancellation only affects the currently
-        running call.
-
-        Example:
-            >>> # In another thread:
-            >>> llm.cancel()  # Cancels the current LLM call
-        """
-        with self._task_lock:
-            if self._current_future is not None:
-                logger.info(f"Cancelling LLM call for {self.usage_id}")
-                # Cancel the Future directly - thread-safe and immediate
-                self._current_future.cancel()
-
-    def is_cancelled(self) -> bool:
-        """Check if the current call has been cancelled.
-
-        Returns:
-            True if there's a current call and it has been cancelled.
-        """
-        with self._task_lock:
-            if self._current_future is not None:
-                return self._current_future.cancelled()
-        return False
-
     def close(self) -> None:
         """Stop the background event loop and cleanup resources.
 
@@ -717,23 +665,7 @@ class LLM(BaseModel, RetryMixin, NonNativeToolCallingMixin):
             ... finally:
             ...     llm.close()  # Clean up background thread
         """
-        with self._task_lock:
-            # Cancel any in-flight call first by cancelling the Future
-            if self._current_future is not None:
-                self._current_future.cancel()
-                self._current_future = None
-
-            if self._async_loop is not None:
-                # Stop the event loop
-                self._async_loop.call_soon_threadsafe(self._async_loop.stop)
-                self._async_loop = None
-
-            if self._async_loop_thread is not None:
-                # Wait for thread to finish (with timeout to avoid deadlock)
-                self._async_loop_thread.join(timeout=1.0)
-                self._async_loop_thread = None
-
-                logger.debug(f"Stopped async event loop thread for LLM {self.usage_id}")
+        self._close_async_resources()
 
     def _handle_error(
         self,
@@ -1014,7 +946,6 @@ class LLM(BaseModel, RetryMixin, NonNativeToolCallingMixin):
             final_kwargs = {**call_kwargs, **retry_kwargs}
 
             # Run async responses call in background event loop for cancellation
-            loop = self._ensure_async_loop()
             coro = self._async_responses_call(
                 typed_input=cast(ResponseInputParam, input_items)
                 if input_items
@@ -1025,21 +956,9 @@ class LLM(BaseModel, RetryMixin, NonNativeToolCallingMixin):
                 on_token=on_token,
                 final_kwargs=final_kwargs,
             )
-
-            future: Future[ResponsesAPIResponse] = asyncio.run_coroutine_threadsafe(
-                coro, loop
+            return self._run_async_with_cancellation(
+                coro, "LLM responses call was cancelled"
             )
-
-            with self._task_lock:
-                self._current_future = future
-
-            try:
-                return future.result()
-            except (asyncio.CancelledError, FutureCancelledError):
-                raise LLMCancelledError("LLM responses call was cancelled")
-            finally:
-                with self._task_lock:
-                    self._current_future = None
 
         try:
             resp: ResponsesAPIResponse = _one_attempt()
@@ -1115,30 +1034,15 @@ class LLM(BaseModel, RetryMixin, NonNativeToolCallingMixin):
         allowing it to be cancelled via LLM.cancel(). The main thread
         blocks waiting for the result.
         """
-        loop = self._ensure_async_loop()
-
-        # Create the async coroutine
         coro = self._async_transport_call(
             messages=messages,
             enable_streaming=enable_streaming,
             on_token=on_token,
             **kwargs,
         )
-
-        # Submit to background event loop and track the Future for cancellation
-        future: Future[ModelResponse] = asyncio.run_coroutine_threadsafe(coro, loop)
-
-        with self._task_lock:
-            self._current_future = future
-
-        try:
-            # Block until complete or cancelled
-            return future.result()
-        except (asyncio.CancelledError, FutureCancelledError):
-            raise LLMCancelledError("LLM completion call was cancelled")
-        finally:
-            with self._task_lock:
-                self._current_future = None
+        return self._run_async_with_cancellation(
+            coro, "LLM completion call was cancelled"
+        )
 
     async def _async_transport_call(
         self,
