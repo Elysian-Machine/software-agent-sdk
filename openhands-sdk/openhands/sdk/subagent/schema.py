@@ -18,6 +18,7 @@ KNOWN_FIELDS: Final[set[str]] = {
     "tools",
     "skills",
     "max_iteration_per_run",
+    "working_dir",
 }
 
 
@@ -54,6 +55,16 @@ def _extract_skills(fm: dict[str, object]) -> list[str]:
     else:
         skills = []
     return skills
+
+
+def _extract_working_dir(fm: dict[str, object]) -> str | None:
+    """Extract working directory from frontmatter."""
+    working_dir_raw = fm.get("working_dir")
+    if working_dir_raw is None:
+        return working_dir_raw
+    if isinstance(working_dir_raw, str):
+        return working_dir_raw
+    raise ValueError(f"working_dir must be a str or None, got {type(working_dir_raw)}")
 
 
 def _extract_examples(description: str) -> list[str]:
@@ -102,6 +113,11 @@ class AgentDefinition(BaseModel):
         default_factory=list,
         description="Examples of when to use this agent (for triggering)",
     )
+    working_dir: str | None = Field(
+        default=None,
+        description="Working directory for the subagent. "
+        "If None, inherits the parent conversation's working directory.",
+    )
     max_iteration_per_run: int | None = Field(
         default=None,
         description="Maximum iterations per run. "
@@ -147,6 +163,7 @@ class AgentDefinition(BaseModel):
         tools: list[str] = _extract_tools(fm)
         skills: list[str] = _extract_skills(fm)
         max_iteration_per_run: int | None = _extract_max_iteration_per_run(fm)
+        working_dir = _extract_working_dir(fm)
 
         # Extract whenToUse examples from description
         when_to_use_examples = _extract_examples(description)
@@ -161,6 +178,7 @@ class AgentDefinition(BaseModel):
             color=color,
             tools=tools,
             skills=skills,
+            working_dir=working_dir,
             max_iteration_per_run=max_iteration_per_run,
             system_prompt=content,
             source=str(agent_path),

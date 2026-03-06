@@ -158,7 +158,6 @@ def _get_profile_store() -> LLMProfileStore:
 
 def agent_definition_to_factory(
     agent_def: AgentDefinition,
-    work_dir: str | Path | None = None,
 ) -> Callable[["LLM"], "Agent"]:
     """Create an agent factory closure from an `AgentDefinition`.
 
@@ -168,6 +167,7 @@ def agent_definition_to_factory(
     - Tool names from `agent_def.tools` are mapped to `Tool` objects.
     - Skill names from `agent_def.skills` are resolved to `Skill` objects
       from project and user skill directories (project takes priority).
+      The project directory is taken from `agent_def.working_dir`.
     - The system prompt is set as the `system_message_suffix` on the
       `AgentContext`.
     - `model: inherit` preserves the parent LLM; an explicit model name
@@ -178,8 +178,6 @@ def agent_definition_to_factory(
 
     Args:
         agent_def: The agent definition to convert.
-        work_dir: Project directory for resolving skill names. If None,
-            only user-level skills are searched.
 
     Raises:
         ValueError: If a tool or skill is not found.
@@ -191,7 +189,10 @@ def agent_definition_to_factory(
         from openhands.sdk.context.skills import load_available_skills
 
         available = load_available_skills(
-            work_dir, include_user=True, include_project=True, include_public=False
+            agent_def.working_dir,
+            include_user=True,
+            include_project=True,
+            include_public=False,
         )
 
         for name in agent_def.skills:
@@ -286,7 +287,10 @@ def register_file_agents(work_dir: str | Path) -> list[str]:
 
     registered: list[str] = []
     for agent_def in deduplicated:
-        factory = agent_definition_to_factory(agent_def, work_dir=work_dir)
+        # Set working_dir from the project if not explicitly defined
+        if agent_def.working_dir is None:
+            agent_def = agent_def.model_copy(update={"working_dir": str(work_dir)})
+        factory = agent_definition_to_factory(agent_def)
         was_registered = register_agent_if_absent(
             name=agent_def.name,
             factory_func=factory,
@@ -304,7 +308,6 @@ def register_file_agents(work_dir: str | Path) -> list[str]:
 
 def register_plugin_agents(
     agents: list[AgentDefinition],
-    work_dir: str | Path | None = None,
 ) -> list[str]:
     """Register plugin-provided agent definitions into the delegate registry.
 
@@ -313,17 +316,18 @@ def register_plugin_agents(
     ``Plugin.agents`` list (which is loaded but not currently registered) into
     the delegate registry.
 
+    Skill resolution uses each agent definition's ``working_dir`` if set;
+    otherwise only user-level skills are searched.
+
     Args:
         agents: Agent definitions collected from loaded plugins.
-        work_dir: Project directory for resolving skill names in agent
-            definitions. If None, only user-level skills are searched.
 
     Returns:
         List of agent names that were actually registered.
     """
     registered: list[str] = []
     for agent_def in agents:
-        factory = agent_definition_to_factory(agent_def, work_dir=work_dir)
+        factory = agent_definition_to_factory(agent_def)
         was_registered = register_agent_if_absent(
             name=agent_def.name,
             factory_func=factory,

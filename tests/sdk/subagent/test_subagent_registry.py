@@ -114,7 +114,7 @@ def test_register_plugin_agents(tmp_path: Path) -> None:
         system_prompt="Plugin prompt.",
     )
 
-    registered = register_plugin_agents([plugin_agent], work_dir=tmp_path)
+    registered = register_plugin_agents([plugin_agent])
 
     assert registered == ["plugin-agent"]
     factory = get_agent_factory("plugin-agent")
@@ -141,7 +141,7 @@ def test_register_plugin_agents_skips_existing(tmp_path: Path) -> None:
         system_prompt="",
     )
 
-    registered = register_plugin_agents([plugin_agent], work_dir=tmp_path)
+    registered = register_plugin_agents([plugin_agent])
     assert registered == []
     # Programmatic version still there
     factory = get_agent_factory("my-agent")
@@ -258,9 +258,10 @@ def test_agent_definition_to_factory_with_skills(tmp_path: Path) -> None:
         tools=[],
         skills=["test-skill"],
         system_prompt="You are a skilled agent.",
+        working_dir=str(tmp_path),
     )
 
-    factory = agent_definition_to_factory(agent_def, work_dir=tmp_path)
+    factory = agent_definition_to_factory(agent_def)
     llm = _make_test_llm()
     agent = factory(llm)
 
@@ -284,9 +285,10 @@ def test_agent_definition_to_factory_skills_only_no_prompt(tmp_path: Path) -> No
         tools=[],
         skills=["only-skill"],
         system_prompt="",
+        working_dir=str(tmp_path),
     )
 
-    factory = agent_definition_to_factory(agent_def, work_dir=tmp_path)
+    factory = agent_definition_to_factory(agent_def)
     llm = _make_test_llm()
     agent = factory(llm)
 
@@ -343,10 +345,11 @@ def test_agent_definition_to_factory_skills_project_over_user(tmp_path: Path) ->
     agent_def = AgentDefinition(
         name="priority-agent",
         skills=["shared-skill"],
+        working_dir=str(tmp_path),
     )
 
     with patch("openhands.sdk.context.skills.skill.Path.home", return_value=user_home):
-        factory = agent_definition_to_factory(agent_def, work_dir=tmp_path)
+        factory = agent_definition_to_factory(agent_def)
 
     llm = _make_test_llm()
     agent = factory(llm)

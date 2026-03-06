@@ -160,11 +160,19 @@ class TaskManager:
                 f"Available tasks: {', '.join(sorted(self._tasks))}"
             )
 
-        worker_agent = self._get_sub_agent(subagent_type)
+        factory = get_agent_factory(subagent_type)
+        worker_agent = self._get_sub_agent_from_factory(factory)
         conversation_id = self._tasks[resume].conversation_id
+
+        # Use working_dir from agent definition if set,
+        # otherwise inherit from parent
+        workspace = (
+            factory.definition.working_dir
+            or self.parent_conversation.state.workspace.working_dir
+        )
         conversation = LocalConversation(
             agent=worker_agent,
-            workspace=self.parent_conversation.state.workspace.working_dir,
+            workspace=workspace,
             persistence_dir=self._tmp_dir,
             conversation_id=conversation_id,
             delete_on_close=False,
@@ -214,6 +222,7 @@ class TaskManager:
             task_id=task_id,
             worker_agent=worker_agent,
             conversation_id=conversation_id,
+            working_dir=factory.definition.working_dir,
         )
 
         self._tasks[task_id] = Task(
@@ -231,9 +240,14 @@ class TaskManager:
         task_id: str,
         conversation_id: uuid.UUID,
         worker_agent: Agent,
+        working_dir: str | None = None,
     ) -> LocalConversation:
         parent = self.parent_conversation
         parent_visualizer = parent._visualizer
+
+        # Use working_dir from agent definition if set,
+        # otherwise inherit from parent
+        workspace = working_dir or parent.state.workspace.working_dir
 
         visualizer = None
         if parent_visualizer is not None:
@@ -242,7 +256,7 @@ class TaskManager:
 
         return LocalConversation(
             agent=worker_agent,
-            workspace=parent.state.workspace.working_dir,
+            workspace=workspace,
             visualizer=visualizer,
             persistence_dir=self._tmp_dir,
             conversation_id=conversation_id,

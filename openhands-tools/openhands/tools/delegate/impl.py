@@ -144,10 +144,18 @@ class DelegateExecutor(ToolExecutor):
                 if parent_visualizer is not None:
                     sub_visualizer = parent_visualizer.create_sub_visualizer(agent_id)
 
+                # Use working_dir from agent definition if set,
+                # otherwise inherit from parent
+                effective_workspace = (
+                    factory.definition.working_dir
+                    if factory.definition.working_dir
+                    else workspace_path
+                )
+
                 # Use max_iteration_per_run from agent definition if set
                 conv_kwargs: dict = {
                     "agent": worker_agent,
-                    "workspace": workspace_path,
+                    "workspace": effective_workspace,
                     "visualizer": sub_visualizer,
                 }
 
