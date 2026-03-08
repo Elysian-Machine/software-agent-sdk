@@ -59,4 +59,4 @@ This is a trade-off:
 ## Related server-side contracts
 
 Agent-server owns REST/WS semantics for events. See:
-- `openhands-agent-server/openhands/agent_server/AGENTS.md`
+- `openhands-agent-server/AGENTS.md`
