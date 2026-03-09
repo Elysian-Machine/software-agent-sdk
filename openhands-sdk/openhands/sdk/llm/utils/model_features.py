@@ -1,30 +1,43 @@
 from dataclasses import dataclass
 
+from openhands.sdk.llm.utils.litellm_provider import LLMProvider
 
-def model_matches(model: str, patterns: list[str]) -> bool:
-    """Return True if any pattern appears as a substring in the raw model name.
+
+def _model_variants(model: str | LLMProvider | None) -> tuple[str, ...]:
+    if isinstance(model, LLMProvider):
+        return tuple(name.strip().lower() for name in model.model_names if name)
+    return (((model or "").strip().lower()),)
+
+
+def model_matches(model: str | LLMProvider | None, patterns: list[str]) -> bool:
+    """Return True if any pattern appears in any normalized model variant.
 
     Matching semantics:
-    - Case-insensitive substring search on full raw model string
+    - Case-insensitive substring search
+    - When an ``LLMProvider`` is passed, we match against the raw user-facing
+      model, LiteLLM's parsed provider model, and the canonical
+      ``provider/model`` form when available.
     """
-    raw = (model or "").strip().lower()
+    variants = _model_variants(model)
     for pat in patterns:
         token = pat.strip().lower()
-        if token in raw:
+        if any(token in variant for variant in variants):
             return True
     return False
 
 
-def apply_ordered_model_rules(model: str, rules: list[str]) -> bool:
+def apply_ordered_model_rules(
+    model: str | LLMProvider | None, rules: list[str]
+) -> bool:
     """Apply ordered include/exclude model rules to determine final support.
 
     Rules semantics:
     - Each entry is a substring token. '!' prefix marks an exclude rule.
-    - Case-insensitive substring matching against the raw model string.
+    - Case-insensitive substring matching against the normalized model variants.
     - Evaluated in order; the last matching rule wins.
     - If no rule matches, returns False.
     """
-    raw = (model or "").strip().lower()
+    variants = _model_variants(model)
     decided: bool | None = None
     for rule in rules:
         token = rule.strip().lower()
@@ -32,7 +45,7 @@ def apply_ordered_model_rules(model: str, rules: list[str]) -> bool:
             continue
         is_exclude = token.startswith("!")
         core = token[1:] if is_exclude else token
-        if core and core in raw:
+        if core and any(core in variant for variant in variants):
             decided = not is_exclude
     return bool(decided)
 
@@ -174,8 +187,8 @@ SEND_REASONING_CONTENT_MODELS: list[str] = [
 ]
 
 
-def get_features(model: str) -> ModelFeatures:
-    """Get model features."""
+def get_features(model: str | LLMProvider | None) -> ModelFeatures:
+    """Get model features for a raw model string or parsed LLM provider."""
     return ModelFeatures(
         supports_reasoning_effort=model_matches(model, REASONING_EFFORT_MODELS),
         supports_extended_thinking=model_matches(model, EXTENDED_THINKING_MODELS),

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from openhands.sdk.llm import LLM
+from openhands.sdk.llm.utils.litellm_provider import LLMProvider
 
 
 class DummyFeatures:
@@ -32,9 +33,10 @@ def test_model_canonical_name_used_for_capabilities(monkeypatch):
         vision_calls.append(model)
         return model.endswith("gpt-5-mini")
 
-    def fake_get_features(model: str):
-        feature_calls.append(model)
-        return DummyFeatures(model)
+    def fake_get_features(model: str | LLMProvider):
+        model_name = model.raw_model if isinstance(model, LLMProvider) else model
+        feature_calls.append(model_name)
+        return DummyFeatures(model_name)
 
     monkeypatch.setattr(
         "openhands.sdk.llm.llm.get_litellm_model_info", fake_get_model_info

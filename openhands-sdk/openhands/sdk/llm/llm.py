@@ -91,7 +91,7 @@ from openhands.sdk.llm.options.responses_options import select_responses_options
 from openhands.sdk.llm.streaming import (
     TokenCallbackType,
 )
-from openhands.sdk.llm.utils.litellm_provider import infer_litellm_provider
+from openhands.sdk.llm.utils.litellm_provider import LLMProvider
 from openhands.sdk.llm.utils.metrics import Metrics, MetricsSnapshot
 from openhands.sdk.llm.utils.model_features import get_features
 from openhands.sdk.llm.utils.retry_mixin import RetryMixin
@@ -390,7 +390,8 @@ class LLM(BaseModel, RetryMixin, NonNativeToolCallingMixin):
     _tokenizer: Any = PrivateAttr(default=None)
     _telemetry: Telemetry | None = PrivateAttr(default=None)
     _is_subscription: bool = PrivateAttr(default=False)
-    _litellm_provider: str | None = PrivateAttr(default=None)
+    _provider_info: LLMProvider | None = PrivateAttr(default=None)
+    _capabilities_provider_info: LLMProvider | None = PrivateAttr(default=None)
 
     model_config: ClassVar[ConfigDict] = ConfigDict(
         extra="ignore", arbitrary_types_allowed=True
@@ -982,13 +983,28 @@ class LLM(BaseModel, RetryMixin, NonNativeToolCallingMixin):
     # Transport + helpers
     # =========================================================================
 
-    def _infer_litellm_provider(self) -> str | None:
-        if self._litellm_provider is not None:
-            return self._litellm_provider
+    def _get_litellm_provider_info(self) -> LLMProvider:
+        if self._provider_info is None:
+            self._provider_info = LLMProvider.from_model(
+                model=self.model, api_base=self.base_url
+            )
+        return self._provider_info
 
-        provider = infer_litellm_provider(model=self.model, api_base=self.base_url)
-        self._litellm_provider = provider
-        return provider
+    def _get_capabilities_provider_info(self) -> LLMProvider:
+        model_for_capabilities = self._model_name_for_capabilities()
+        if (
+            self._capabilities_provider_info is None
+            or self._capabilities_provider_info.raw_model != model_for_capabilities
+            or self._capabilities_provider_info.requested_api_base != self.base_url
+        ):
+            self._capabilities_provider_info = LLMProvider.from_model(
+                model=model_for_capabilities,
+                api_base=self.base_url,
+            )
+        return self._capabilities_provider_info
+
+    def _infer_litellm_provider(self) -> str | None:
+        return self._get_litellm_provider_info().name
 
     def _get_litellm_api_key_value(self) -> str | None:
         api_key_value: str | None = None
@@ -1000,7 +1016,7 @@ class LLM(BaseModel, RetryMixin, NonNativeToolCallingMixin):
         # Passing a non-Bedrock key (e.g. OpenAI/Anthropic) can cause Bedrock
         # to reject the request with an "Invalid API Key format" error.
         # For IAM/SigV4 auth (the default Bedrock path), do not forward api_key.
-        if api_key_value is not None and self._infer_litellm_provider() == "bedrock":
+        if api_key_value is not None and self._get_litellm_provider_info().is_bedrock:
             return None
 
         return api_key_value
@@ -1207,14 +1223,18 @@ class LLM(BaseModel, RetryMixin, NonNativeToolCallingMixin):
         # only Anthropic models need explicit caching breakpoints
         return (
             self.caching_prompt
-            and get_features(self._model_name_for_capabilities()).supports_prompt_cache
+            and get_features(
+                self._get_capabilities_provider_info()
+            ).supports_prompt_cache
         )
 
     def uses_responses_api(self) -> bool:
         """Whether this model uses the OpenAI Responses API path."""
 
         # by default, uses = supports
-        return get_features(self._model_name_for_capabilities()).supports_responses_api
+        return get_features(
+            self._get_capabilities_provider_info()
+        ).supports_responses_api
 
     @property
     def model_info(self) -> dict | None:
@@ -1259,7 +1279,7 @@ class LLM(BaseModel, RetryMixin, NonNativeToolCallingMixin):
         if self.is_caching_prompt_active():
             self._apply_prompt_caching(messages)
 
-        model_features = get_features(self._model_name_for_capabilities())
+        model_features = get_features(self._get_capabilities_provider_info())
         cache_enabled = self.is_caching_prompt_active()
         vision_enabled = self.vision_is_active()
         function_calling_enabled = self.native_tool_calling

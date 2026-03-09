@@ -36,6 +36,12 @@ See the [project root AGENTS.md](../../../AGENTS.md) for repository-wide policie
   `Invalid API Key format: Must start with pre-defined prefix`.
 - If you need Bedrock bearer-token auth, set `AWS_BEARER_TOKEN_BEDROCK` in the environment
   (instead of using `LLM_API_KEY`).
+- Prefer `openhands.sdk.llm.utils.litellm_provider.LLMProvider` for runtime/provider-aware
+  logic instead of manually splitting `LLM.model`. It preserves the raw model string while
+  exposing LiteLLM's parsed provider/model view.
+- Keep `unverified_models` conservative for UI bucketing: LiteLLM inference is useful for
+  transport behavior, but it can classify ambiguous raw IDs (for example regional Bedrock IDs
+  or arbitrary `prefix/model` strings) more aggressively than the UI should.
 
 ## Event Type Deprecation Policy
 
