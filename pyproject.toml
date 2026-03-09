@@ -22,6 +22,7 @@ openhands-agent-server = { workspace = true }
 
 [dependency-groups]
 dev = [
+    "agent-client-protocol>=0.8.1",  # Optional SDK extra; included for ACP tests
     "pre-commit>=4.3.0",
     "packaging>=24.2",
     "psutil>=7.0.0",

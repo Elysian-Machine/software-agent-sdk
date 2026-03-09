@@ -25,6 +25,7 @@ constraints = [
 
 [manifest.dependency-groups]
 dev = [
+    { name = "agent-client-protocol", specifier = ">=0.8.1" },
     { name = "griffe", extras = ["pypi"], specifier = ">=2.0.0" },
     { name = "packaging", specifier = ">=24.2" },
     { name = "pre-commit", specifier = ">=4.3.0" },
@@ -2377,7 +2378,6 @@ name = "openhands-sdk"
 version = "1.12.0"
 source = { editable = "openhands-sdk" }
 dependencies = [
-    { name = "agent-client-protocol" },
     { name = "deprecation" },
     { name = "fakeredis", extra = ["lua"] },
     { name = "fastmcp" },
@@ -2393,13 +2393,16 @@ dependencies = [
 ]
 
 [package.optional-dependencies]
+acp = [
+    { name = "agent-client-protocol" },
+]
 boto3 = [
     { name = "boto3" },
 ]
 
 [package.metadata]
 requires-dist = [
-    { name = "agent-client-protocol", specifier = ">=0.8.1" },
+    { name = "agent-client-protocol", marker = "extra == 'acp'", specifier = ">=0.8.1" },
     { name = "boto3", marker = "extra == 'boto3'", specifier = ">=1.35.0" },
     { name = "deprecation", specifier = ">=2.1.0" },
     { name = "fakeredis", extras = ["lua"], specifier = ">=2.32.1" },
@@ -2414,7 +2417,7 @@ requires-dist = [
     { name = "tenacity", specifier = ">=9.1.2" },
     { name = "websockets", specifier = ">=12" },
 ]
-provides-extras = ["boto3"]
+provides-extras = ["acp", "boto3"]
 
 [[package]]
 name = "openhands-tools"

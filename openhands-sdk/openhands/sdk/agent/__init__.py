@@ -15,7 +15,14 @@ if TYPE_CHECKING:
 # that previously defaulted.
 def __getattr__(name: str):
     if name == "ACPAgent":
-        from openhands.sdk.agent.acp_agent import ACPAgent
+        try:
+            from openhands.sdk.agent.acp_agent import ACPAgent
+        except ImportError:
+            raise ImportError(
+                "The 'agent-client-protocol' package is required for ACPAgent. "
+                "Install it with: pip install 'openhands-sdk[acp]' or "
+                "pip install agent-client-protocol"
+            ) from None
 
         return ACPAgent
     raise AttributeError(f"module {__name__!r} has no attribute {name!r}")

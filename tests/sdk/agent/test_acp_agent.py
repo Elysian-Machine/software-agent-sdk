@@ -9,15 +9,22 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
-from openhands.sdk.agent.acp_agent import ACPAgent, _OpenHandsACPBridge
-from openhands.sdk.agent.base import AgentBase
-from openhands.sdk.conversation.state import (
+
+pytest.importorskip("acp", reason="agent-client-protocol not installed")
+
+from openhands.sdk.agent.acp_agent import ACPAgent, _OpenHandsACPBridge  # noqa: E402
+from openhands.sdk.agent.base import AgentBase  # noqa: E402
+from openhands.sdk.conversation.state import (  # noqa: E402
     ConversationExecutionStatus,
     ConversationState,
 )
-from openhands.sdk.event import ACPToolCallEvent, MessageEvent, SystemPromptEvent
-from openhands.sdk.llm import Message, TextContent
-from openhands.sdk.workspace.local import LocalWorkspace
+from openhands.sdk.event import (  # noqa: E402
+    ACPToolCallEvent,
+    MessageEvent,
+    SystemPromptEvent,
+)
+from openhands.sdk.llm import Message, TextContent  # noqa: E402
+from openhands.sdk.workspace.local import LocalWorkspace  # noqa: E402
 
 
 # ---------------------------------------------------------------------------

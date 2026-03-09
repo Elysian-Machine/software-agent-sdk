@@ -8,6 +8,7 @@ and leaves the main conversation untouched.
 Prerequisites:
     - Node.js / npx available
     - Claude Code CLI authenticated (or CLAUDE_API_KEY set)
+    - pip install 'openhands-sdk[acp]'
 
 Usage:
     uv run python examples/01_standalone_sdk/40_acp_agent_example.py
