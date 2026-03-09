@@ -42,6 +42,8 @@ See the [project root AGENTS.md](../../../AGENTS.md) for repository-wide policie
 - Do not duplicate multiple cached provider objects for transport versus capabilities. Keep
   transport/provider parsing in `LLMProvider`, and keep capability/feature lookups on the
   canonical model string (`LLM.model_canonical_name` or `LLM.model`).
+- If `LLM` caches parsed provider info, keep the cache key on `LLM` (for example `(model,
+  base_url)`), not as duplicate raw-request fields inside `LLMProvider`.
 - Keep `unverified_models` conservative for UI bucketing: LiteLLM inference is useful for
   transport behavior, but it can classify ambiguous raw IDs (for example regional Bedrock IDs)
   more aggressively than the UI should.

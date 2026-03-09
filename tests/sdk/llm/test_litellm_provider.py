@@ -9,10 +9,7 @@ def test_llm_provider_parses_nested_openrouter_model():
     assert provider.name == "openrouter"
     assert provider.model == "anthropic/claude-sonnet-4"
     assert provider.canonical_name == "openrouter/anthropic/claude-sonnet-4"
-    assert provider.model_names == (
-        "anthropic/claude-sonnet-4",
-        "openrouter/anthropic/claude-sonnet-4",
-    )
+    assert not hasattr(provider, "requested_model")
     assert provider.as_litellm_call_kwargs() == {
         "model": "anthropic/claude-sonnet-4",
         "custom_llm_provider": "openrouter",

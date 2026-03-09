@@ -419,6 +419,21 @@ def test_llm_model_copy_recomputes_transport_provider_for_proxy_alias(mock_compl
     assert "custom_llm_provider" not in kwargs
 
 
+def test_llm_model_copy_recomputes_transport_provider_when_base_url_changes():
+    original = LLM(
+        usage_id="test-llm",
+        model="gpt-4o",
+        api_key=SecretStr("test_key"),
+        num_retries=0,
+    )
+    original_provider_info = original._get_litellm_provider_info()
+
+    copied = original.model_copy(update={"base_url": "http://localhost:8000"})
+    copied_provider_info = copied._get_litellm_provider_info()
+
+    assert copied_provider_info is not original_provider_info
+
+
 @patch("openhands.sdk.llm.llm.litellm_completion")
 def test_completion_merges_llm_extra_headers_with_extended_thinking_default(
     mock_completion,

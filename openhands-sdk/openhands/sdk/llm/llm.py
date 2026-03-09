@@ -391,6 +391,7 @@ class LLM(BaseModel, RetryMixin, NonNativeToolCallingMixin):
     _telemetry: Telemetry | None = PrivateAttr(default=None)
     _is_subscription: bool = PrivateAttr(default=False)
     _provider_info: LLMProvider | None = PrivateAttr(default=None)
+    _provider_info_cache_key: tuple[str, str | None] | None = PrivateAttr(default=None)
 
     model_config: ClassVar[ConfigDict] = ConfigDict(
         extra="ignore", arbitrary_types_allowed=True
@@ -984,18 +985,13 @@ class LLM(BaseModel, RetryMixin, NonNativeToolCallingMixin):
     # =========================================================================
 
     def _get_litellm_provider_info(self) -> LLMProvider:
-        if (
-            self._provider_info is None
-            or self._provider_info.requested_model != self.model
-            or self._provider_info.requested_api_base != self.base_url
-        ):
+        cache_key = (self.model, self.base_url)
+        if self._provider_info is None or self._provider_info_cache_key != cache_key:
             self._provider_info = LLMProvider.from_model(
                 model=self.model, api_base=self.base_url
             )
+            self._provider_info_cache_key = cache_key
         return self._provider_info
-
-    def _infer_litellm_provider(self) -> str | None:
-        return self._get_litellm_provider_info().name
 
     def _get_litellm_api_key_value(self) -> str | None:
         api_key_value: str | None = None
