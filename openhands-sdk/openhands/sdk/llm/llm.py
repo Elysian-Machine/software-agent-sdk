@@ -391,7 +391,6 @@ class LLM(BaseModel, RetryMixin, NonNativeToolCallingMixin):
     _telemetry: Telemetry | None = PrivateAttr(default=None)
     _is_subscription: bool = PrivateAttr(default=False)
     _provider_info: LLMProvider | None = PrivateAttr(default=None)
-    _provider_info_cache_key: tuple[str, str | None] | None = PrivateAttr(default=None)
 
     model_config: ClassVar[ConfigDict] = ConfigDict(
         extra="ignore", arbitrary_types_allowed=True
@@ -483,6 +482,12 @@ class LLM(BaseModel, RetryMixin, NonNativeToolCallingMixin):
         # Tokenizer
         if self.custom_tokenizer:
             self._tokenizer = create_pretrained_tokenizer(self.custom_tokenizer)
+
+        # LiteLLM-facing provider parsing is fixed for the lifetime of this LLM.
+        self._provider_info = LLMProvider.from_model(
+            model=self.model,
+            api_base=self.base_url,
+        )
 
         # Capabilities + model info
         self._init_model_info_and_caps()
@@ -869,7 +874,8 @@ class LLM(BaseModel, RetryMixin, NonNativeToolCallingMixin):
                     typed_input: ResponseInputParam | str = (
                         cast(ResponseInputParam, input_items) if input_items else ""
                     )
-                    provider_info = self._get_litellm_provider_info()
+                    provider_info = self._provider_info
+                    assert provider_info is not None
 
                     ret = litellm_responses(
                         **provider_info.as_litellm_call_kwargs(
@@ -984,16 +990,6 @@ class LLM(BaseModel, RetryMixin, NonNativeToolCallingMixin):
     # Transport + helpers
     # =========================================================================
 
-    def _get_litellm_provider_info(self) -> LLMProvider:
-        self._provider_info, self._provider_info_cache_key = LLMProvider.resolve_cached(
-            model=self.model,
-            api_base=self.base_url,
-            cached_provider=self._provider_info,
-            cached_key=self._provider_info_cache_key,
-        )
-        assert self._provider_info is not None
-        return self._provider_info
-
     def _get_api_key_value(self) -> str | None:
         if self.api_key is None:
             return None
@@ -1034,7 +1030,8 @@ class LLM(BaseModel, RetryMixin, NonNativeToolCallingMixin):
                     category=DeprecationWarning,
                     message="Accessing the 'model_fields' attribute.*",
                 )
-                provider_info = self._get_litellm_provider_info()
+                provider_info = self._provider_info
+                assert provider_info is not None
 
                 # Some providers need renames handled in _normalize_call_kwargs.
                 ret = litellm_completion(

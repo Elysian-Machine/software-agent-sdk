@@ -86,7 +86,8 @@ def test_bedrock_model_with_api_key_not_forwarded_to_litellm():
     )
     assert llm.api_key is not None
     assert isinstance(llm.api_key, SecretStr)
-    provider = llm._get_litellm_provider_info()
+    provider = llm._provider_info
+    assert provider is not None
     assert provider.api_key_for_litellm(llm.api_key.get_secret_value()) is None
 
 

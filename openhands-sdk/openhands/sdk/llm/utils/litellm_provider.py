@@ -25,24 +25,6 @@ class LLMProvider:
     name: str | None
     resolved_api_base: str | None
 
-    @staticmethod
-    def cache_key(*, model: str, api_base: str | None) -> tuple[str, str | None]:
-        return (model, api_base)
-
-    @classmethod
-    def resolve_cached(
-        cls,
-        *,
-        model: str,
-        api_base: str | None,
-        cached_provider: LLMProvider | None,
-        cached_key: tuple[str, str | None] | None,
-    ) -> tuple[LLMProvider, tuple[str, str | None]]:
-        cache_key = cls.cache_key(model=model, api_base=api_base)
-        if cached_provider is not None and cached_key == cache_key:
-            return cached_provider, cache_key
-        return cls.from_model(model=model, api_base=api_base), cache_key
-
     @classmethod
     def from_model(cls, *, model: str, api_base: str | None) -> LLMProvider:
         """Parse a model string using LiteLLM's provider inference logic."""

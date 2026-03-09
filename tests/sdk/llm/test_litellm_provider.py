@@ -43,34 +43,6 @@ def test_llm_provider_strips_api_key_for_bedrock_calls():
     }
 
 
-def test_llm_provider_reuses_cached_instance_for_same_request():
-    provider = LLMProvider.from_model(model="gpt-4o", api_base=None)
-
-    cached_provider, cached_key = LLMProvider.resolve_cached(
-        model="gpt-4o",
-        api_base=None,
-        cached_provider=provider,
-        cached_key=LLMProvider.cache_key(model="gpt-4o", api_base=None),
-    )
-
-    assert cached_provider is provider
-    assert cached_key == ("gpt-4o", None)
-
-
-def test_llm_provider_refreshes_cached_instance_when_request_changes():
-    provider = LLMProvider.from_model(model="gpt-4o", api_base=None)
-
-    refreshed_provider, refreshed_key = LLMProvider.resolve_cached(
-        model="proxy/test-renamed-model",
-        api_base="http://localhost:8000",
-        cached_provider=provider,
-        cached_key=LLMProvider.cache_key(model="gpt-4o", api_base=None),
-    )
-
-    assert refreshed_provider is not provider
-    assert refreshed_key == ("proxy/test-renamed-model", "http://localhost:8000")
-
-
 def test_llm_provider_handles_unknown_model_without_provider():
     provider = LLMProvider.from_model(model="unknown-model", api_base=None)
 
