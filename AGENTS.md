@@ -303,6 +303,8 @@ Note: This is separate from `persistence_dir` which is used for conversation sta
 - Build agent-server: `make build-server` (output: `dist/agent-server/`)
 - Clean caches: `make clean`
 - Run SDK examples: see [openhands-sdk/openhands/sdk/AGENTS.md](openhands-sdk/openhands/sdk/AGENTS.md).
+- Programmatic settings schemas should annotate the canonical SDK model fields (for example `LLM`) and export only those annotated fields, instead of introducing duplicate subset config models that can drift from the source of truth.
+
 </QUICK_COMMANDS>
 
 <REPO_CONFIG_NOTES>

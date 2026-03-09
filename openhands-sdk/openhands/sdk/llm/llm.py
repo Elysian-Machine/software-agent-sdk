@@ -23,6 +23,10 @@ from pydantic.json_schema import SkipJsonSchema
 
 from openhands.sdk.llm.fallback_strategy import FallbackStrategy
 from openhands.sdk.llm.utils.model_info import get_litellm_model_info
+from openhands.sdk.settings_metadata import (
+    SETTINGS_METADATA_KEY,
+    SettingsFieldMetadata,
+)
 from openhands.sdk.utils.deprecation import warn_deprecated
 from openhands.sdk.utils.pydantic_secrets import serialize_secret, validate_secret
 
@@ -151,9 +155,43 @@ class LLM(BaseModel, RetryMixin, NonNativeToolCallingMixin):
     # =========================================================================
     # Config fields
     # =========================================================================
-    model: str = Field(default="claude-sonnet-4-20250514", description="Model name.")
-    api_key: str | SecretStr | None = Field(default=None, description="API key.")
-    base_url: str | None = Field(default=None, description="Custom base URL.")
+    model: str = Field(
+        default="claude-sonnet-4-20250514",
+        description="Model name.",
+        json_schema_extra={
+            SETTINGS_METADATA_KEY: SettingsFieldMetadata(
+                label="Model",
+                order=10,
+                placeholder="anthropic/claude-sonnet-4-5-20250929",
+                slash_command="llm-model",
+            ).model_dump()
+        },
+    )
+    api_key: str | SecretStr | None = Field(
+        default=None,
+        description="API key.",
+        json_schema_extra={
+            SETTINGS_METADATA_KEY: SettingsFieldMetadata(
+                label="API key",
+                order=20,
+                widget="password",
+                slash_command="llm-api-key",
+            ).model_dump()
+        },
+    )
+    base_url: str | None = Field(
+        default=None,
+        description="Custom base URL.",
+        json_schema_extra={
+            SETTINGS_METADATA_KEY: SettingsFieldMetadata(
+                label="Base URL",
+                order=30,
+                placeholder="https://api.openai.com/v1",
+                advanced=True,
+                slash_command="llm-base-url",
+            ).model_dump()
+        },
+    )
     api_version: str | None = Field(
         default=None, description="API version (e.g., Azure)."
     )
@@ -175,6 +213,15 @@ class LLM(BaseModel, RetryMixin, NonNativeToolCallingMixin):
         ge=0,
         description="HTTP timeout in seconds. Default is 300s (5 minutes). "
         "Set to None to disable timeout (not recommended for production).",
+        json_schema_extra={
+            SETTINGS_METADATA_KEY: SettingsFieldMetadata(
+                label="Timeout (seconds)",
+                order=40,
+                widget="number",
+                advanced=True,
+                slash_command="llm-timeout",
+            ).model_dump()
+        },
     )
 
     max_message_chars: int = Field(
@@ -211,6 +258,15 @@ class LLM(BaseModel, RetryMixin, NonNativeToolCallingMixin):
         description="The maximum number of input tokens. "
         "Note that this is currently unused, and the value at runtime is actually"
         " the total tokens in OpenAI (e.g. 128,000 tokens for GPT-4).",
+        json_schema_extra={
+            SETTINGS_METADATA_KEY: SettingsFieldMetadata(
+                label="Max input tokens",
+                order=50,
+                widget="number",
+                advanced=True,
+                slash_command="llm-max-input-tokens",
+            ).model_dump()
+        },
     )
     max_output_tokens: int | None = Field(
         default=None,

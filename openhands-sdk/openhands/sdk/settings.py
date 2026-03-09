@@ -12,27 +12,12 @@ from openhands.sdk.context.condenser import LLMSummarizingCondenser
 from openhands.sdk.critic import IterativeRefinementConfig
 from openhands.sdk.critic.impl.api import APIBasedCritic
 from openhands.sdk.llm import LLM
-
-
-SETTINGS_METADATA_KEY = "openhands_settings"
-SETTINGS_SECTION_METADATA_KEY = "openhands_settings_section"
-
-
-class SettingsSectionMetadata(BaseModel):
-    key: str
-    label: str
-    order: int
-
-
-class SettingsFieldMetadata(BaseModel):
-    label: str
-    order: int
-    widget: Literal["text", "password", "number", "boolean", "select"] | None = None
-    placeholder: str | None = None
-    advanced: bool = False
-    depends_on: tuple[str, ...] = ()
-    help_text: str | None = None
-    slash_command: str | None = None
+from openhands.sdk.settings_metadata import (
+    SETTINGS_METADATA_KEY,
+    SETTINGS_SECTION_METADATA_KEY,
+    SettingsFieldMetadata,
+    SettingsSectionMetadata,
+)
 
 
 class SettingsChoice(BaseModel):
@@ -72,78 +57,10 @@ class SettingsSchema(BaseModel):
 CriticMode = Literal["finish_and_message", "all_actions"]
 
 
-class LLMSettings(BaseModel):
-    model: str = Field(
-        default="claude-sonnet-4-20250514",
-        description="Model name for the primary LLM.",
-        json_schema_extra={
-            SETTINGS_METADATA_KEY: SettingsFieldMetadata(
-                label="Model",
-                order=10,
-                placeholder="anthropic/claude-sonnet-4-5-20250929",
-                slash_command="llm-model",
-            ).model_dump()
-        },
-    )
-    api_key: SecretStr | None = Field(
-        default=None,
-        description="API key used to authenticate the primary LLM.",
-        json_schema_extra={
-            SETTINGS_METADATA_KEY: SettingsFieldMetadata(
-                label="API key",
-                order=20,
-                widget="password",
-                slash_command="llm-api-key",
-            ).model_dump()
-        },
-    )
-    base_url: str | None = Field(
-        default=None,
-        description="Optional custom base URL for the primary LLM.",
-        json_schema_extra={
-            SETTINGS_METADATA_KEY: SettingsFieldMetadata(
-                label="Base URL",
-                order=30,
-                placeholder="https://api.openai.com/v1",
-                advanced=True,
-                slash_command="llm-base-url",
-            ).model_dump()
-        },
-    )
-    timeout: int | None = Field(
-        default=300,
-        ge=0,
-        description="HTTP timeout in seconds for LLM requests.",
-        json_schema_extra={
-            SETTINGS_METADATA_KEY: SettingsFieldMetadata(
-                label="Timeout (seconds)",
-                order=40,
-                widget="number",
-                advanced=True,
-                slash_command="llm-timeout",
-            ).model_dump()
-        },
-    )
-    max_input_tokens: int | None = Field(
-        default=None,
-        ge=1,
-        description="Optional maximum number of input tokens for the primary LLM.",
-        json_schema_extra={
-            SETTINGS_METADATA_KEY: SettingsFieldMetadata(
-                label="Max input tokens",
-                order=50,
-                widget="number",
-                advanced=True,
-                slash_command="llm-max-input-tokens",
-            ).model_dump()
-        },
-    )
-
-
 class CondenserSettings(BaseModel):
     enabled: bool = Field(
         default=True,
-        description="Enable the default LLM summarizing condenser.",
+        description="Enable the LLM summarizing condenser.",
         json_schema_extra={
             SETTINGS_METADATA_KEY: SettingsFieldMetadata(
                 label="Enable memory condensation",
@@ -248,9 +165,15 @@ CriticFactory = Callable[[LLM, "AgentSettings", Agent | None], APIBasedCritic | 
 AgentFactory = Callable[[LLM], Agent]
 
 
+def _default_llm_settings() -> LLM:
+    model = LLM.model_fields["model"].get_default()
+    assert isinstance(model, str)
+    return LLM(model=model)
+
+
 class AgentSettings(BaseModel):
-    llm: LLMSettings = Field(
-        default_factory=LLMSettings,
+    llm: LLM = Field(
+        default_factory=_default_llm_settings,
         description="LLM settings for the agent.",
         json_schema_extra={
             SETTINGS_SECTION_METADATA_KEY: SettingsSectionMetadata(
@@ -319,13 +242,7 @@ class AgentSettings(BaseModel):
 
         return cls.model_validate(
             {
-                "llm": {
-                    "model": agent.llm.model,
-                    "api_key": _to_secret(agent.llm.api_key),
-                    "base_url": agent.llm.base_url,
-                    "timeout": agent.llm.timeout,
-                    "max_input_tokens": agent.llm.max_input_tokens,
-                },
+                "llm": agent.llm.model_dump(mode="python"),
                 "condenser": {
                     "enabled": condenser_enabled,
                     "max_size": condenser_max_size,
@@ -347,22 +264,14 @@ class AgentSettings(BaseModel):
         agent_factory: AgentFactory | None = None,
         critic_factory: CriticFactory | None = None,
     ) -> Agent:
-        llm_update = {
-            "model": self.llm.model,
-            "api_key": self.llm.api_key,
-            "base_url": self.llm.base_url,
-            "timeout": self.llm.timeout,
-            "max_input_tokens": self.llm.max_input_tokens,
-        }
+        llm = LLM.model_validate(self.llm.model_dump(mode="python"))
 
         base_agent = agent
         if base_agent is None:
-            llm = LLM(**llm_update)
             base_agent = (
                 agent_factory(llm) if agent_factory is not None else Agent(llm=llm)
             )
         else:
-            llm = base_agent.llm.model_copy(update=llm_update)
             base_agent = base_agent.model_copy(update={"llm": llm})
 
         condenser = base_agent.condenser
@@ -582,11 +491,3 @@ def _normalize_default(value: Any) -> bool | int | float | str | None:
     if isinstance(value, (bool, int, float, str)) or value is None:
         return value
     return None
-
-
-def _to_secret(value: str | SecretStr | None) -> SecretStr | None:
-    if value is None:
-        return None
-    if isinstance(value, SecretStr):
-        return value
-    return SecretStr(value)

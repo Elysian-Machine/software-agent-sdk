@@ -51,14 +51,15 @@ from openhands.sdk.settings import (
     AgentSettings,
     CondenserSettings,
     CriticSettings,
-    LLMSettings,
     SettingsChoice,
-    SettingsFieldMetadata,
     SettingsFieldSchema,
     SettingsSchema,
-    SettingsSectionMetadata,
     SettingsSectionSchema,
     export_settings_schema,
+)
+from openhands.sdk.settings_metadata import (
+    SettingsFieldMetadata,
+    SettingsSectionMetadata,
 )
 from openhands.sdk.subagent import (
     agent_definition_to_factory,
@@ -124,7 +125,6 @@ __all__ = [
     "LLMConvertibleEvent",
     "AgentContext",
     "LLMSummarizingCondenser",
-    "LLMSettings",
     "CondenserSettings",
     "CriticSettings",
     "AgentSettings",

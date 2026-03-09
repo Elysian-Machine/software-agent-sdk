@@ -6,7 +6,6 @@ from openhands.sdk import (
     AgentSettings,
     CondenserSettings,
     CriticSettings,
-    LLMSettings,
     LLMSummarizingCondenser,
 )
 from openhands.sdk.critic import IterativeRefinementConfig
@@ -22,6 +21,7 @@ def test_agent_settings_from_agent_and_apply_to_agent(monkeypatch) -> None:
             api_key=SecretStr("llm-key"),
             base_url="https://llm.example",
             timeout=180,
+            temperature=0.3,
             max_input_tokens=4096,
         ),
         condenser=LLMSummarizingCondenser(
@@ -47,6 +47,7 @@ def test_agent_settings_from_agent_and_apply_to_agent(monkeypatch) -> None:
     assert settings.llm.model == "openai/gpt-4o"
     assert settings.llm.base_url == "https://llm.example"
     assert settings.llm.timeout == 180
+    assert settings.llm.temperature == 0.3
     assert settings.llm.max_input_tokens == 4096
     assert settings.condenser.enabled is True
     assert settings.condenser.max_size == 320
@@ -68,6 +69,7 @@ def test_agent_settings_from_agent_and_apply_to_agent(monkeypatch) -> None:
     updated_agent = updated_settings.apply_to_agent(agent)
 
     assert updated_agent.llm.timeout == 90
+    assert updated_agent.llm.temperature == 0.3
     assert isinstance(updated_agent.condenser, LLMSummarizingCondenser)
     assert updated_agent.condenser.max_size == 256
     assert isinstance(updated_agent.critic, APIBasedCritic)
@@ -79,7 +81,7 @@ def test_agent_settings_from_agent_and_apply_to_agent(monkeypatch) -> None:
 
 def test_agent_settings_to_agent_uses_factories() -> None:
     settings = AgentSettings(
-        llm=LLMSettings(
+        llm=LLM(
             model="openai/gpt-4o",
             api_key=SecretStr("llm-key"),
             base_url="https://llm.example",
@@ -134,6 +136,13 @@ def test_agent_settings_export_schema_groups_sections() -> None:
     ]
 
     llm_fields = {field.key: field for field in schema.sections[0].fields}
+    assert set(llm_fields) == {
+        "llm.model",
+        "llm.api_key",
+        "llm.base_url",
+        "llm.timeout",
+        "llm.max_input_tokens",
+    }
     assert llm_fields["llm.model"].required is True
     assert llm_fields["llm.api_key"].widget == "password"
     assert llm_fields["llm.api_key"].required is False
