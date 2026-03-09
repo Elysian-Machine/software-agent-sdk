@@ -35,6 +35,7 @@ def test_model_matches(name, pattern, expected):
         # Gemini 3 family
         ("gemini-3-pro-preview", True),
         ("gemini-3-flash-preview", True),
+        ("gemini-3.1-pro-preview", True),
         # GPT-5 family
         ("gpt-5.2", True),
         ("gpt-5.2-codex", True),
@@ -295,9 +296,12 @@ def test_force_string_serializer_full_model_names():
         ("openai/gpt-5-mini", False),
         ("gpt-4o", False),
         ("openai/gpt-4.1", True),
+        ("azure/gpt-4.1", False),
+        ("litellm/gpt-4.1", True),
         ("litellm_proxy/gpt-4.1", True),
         ("litellm_proxy/openai/gpt-4.1", True),
         ("litellm_proxy/openai/gpt-5", True),
+        ("azure/gpt-5.1", False),
         ("litellm_proxy/openai/gpt-5-mini", False),
         ("openai/gpt-5.1-mini", False),
         ("openai/gpt-5-mini-2025-08-07", False),

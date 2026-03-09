@@ -109,11 +109,12 @@ class StartConversationRequest(BaseModel):
             "to register the tools for this conversation."
         ),
     )
-    subagent_definitions: list[AgentDefinition] = Field(
+    agent_definitions: list[AgentDefinition] = Field(
         default_factory=list,
         description=(
-            "Subagent definitions from the client's registry. These are "
-            "registered on the server so DelegateTool can advertise them."
+            "Agent definitions from the client's registry. These are "
+            "registered on the server so that DelegateTool and TaskSetTool "
+            "can see user-registered subagents."
         ),
     )
     plugins: list[PluginSource] | None = Field(

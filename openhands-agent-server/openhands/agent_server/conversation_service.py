@@ -3,6 +3,7 @@ import importlib
 import logging
 from dataclasses import dataclass, field
 from pathlib import Path
+from typing import TYPE_CHECKING
 from uuid import UUID, uuid4
 
 import httpx
@@ -30,6 +31,10 @@ from openhands.sdk.event.conversation_state import ConversationStateUpdateEvent
 from openhands.sdk.utils.cipher import Cipher
 
 
+if TYPE_CHECKING:
+    from openhands.sdk.subagent.schema import AgentDefinition
+
+
 logger = logging.getLogger(__name__)
 
 
@@ -45,6 +50,41 @@ def _compose_conversation_info(
         metrics=stored.metrics,
         created_at=stored.created_at,
         updated_at=stored.updated_at,
+    )
+
+
+def _register_agent_definitions(
+    agent_defs: list["AgentDefinition"],
+    *,
+    context: str,
+) -> None:
+    """Register agent definitions into the subagent registry.
+
+    Used both when creating new conversations (definitions forwarded from the
+    client) and when resuming persisted ones (definitions stored in meta.json).
+    """
+    from openhands.sdk.subagent.registry import (
+        agent_definition_to_factory,
+        register_agent_if_absent,
+    )
+
+    registered = 0
+    for agent_def in agent_defs:
+        try:
+            factory = agent_definition_to_factory(agent_def)
+            register_agent_if_absent(
+                name=agent_def.name,
+                factory_func=factory,
+                description=agent_def,
+            )
+            registered += 1
+        except Exception as e:
+            logger.warning(
+                f"Failed to register agent definition "
+                f"'{agent_def.name}' ({context}): {e}"
+            )
+    logger.info(
+        f"Registered {registered}/{len(agent_defs)} agent definition(s) ({context})"
     )
 
 
@@ -240,26 +280,11 @@ class ConversationService:
                     f"{list(request.tool_module_qualnames.keys())}"
                 )
 
-        # Register subagent definitions from the client's registry
-        if request.subagent_definitions:
-            from openhands.sdk.subagent.registry import (
-                agent_definition_to_factory,
-                register_agent_if_absent,
-            )
-
-            for agent_def in request.subagent_definitions:
-                factory = agent_definition_to_factory(agent_def)
-                register_agent_if_absent(
-                    name=agent_def.name,
-                    factory_func=factory,
-                    description=agent_def.description
-                    or f"Remote agent: {agent_def.name}",
-                    definition=agent_def,
-                )
-            logger.info(
-                f"Registered {len(request.subagent_definitions)} subagent "
-                f"definitions for conversation {conversation_id}: "
-                f"{[d.name for d in request.subagent_definitions]}"
+        # Register subagent definitions forwarded from the client
+        if request.agent_definitions:
+            _register_agent_definitions(
+                request.agent_definitions,
+                context=f"conversation {conversation_id}",
             )
 
         # Plugin loading is now handled lazily by LocalConversation.
@@ -475,6 +500,12 @@ class ConversationService:
                             f"resuming conversation {stored.id}: "
                             f"{list(stored.tool_module_qualnames.keys())}"
                         )
+                # Register agent definitions when resuming
+                if stored.agent_definitions:
+                    _register_agent_definitions(
+                        stored.agent_definitions,
+                        context=f"resuming conversation {stored.id}",
+                    )
                 await self._start_event_service(stored)
             except Exception:
                 logger.exception(
