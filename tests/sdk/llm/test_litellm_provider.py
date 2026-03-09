@@ -8,11 +8,16 @@ def test_llm_provider_parses_nested_openrouter_model():
     )
 
     assert provider.name == "openrouter"
-    assert provider.litellm_model == "anthropic/claude-sonnet-4"
+    assert provider.model == "anthropic/claude-sonnet-4"
+    assert provider.canonical_name == "openrouter/anthropic/claude-sonnet-4"
     assert provider.model_names == (
-        "openrouter/anthropic/claude-sonnet-4",
         "anthropic/claude-sonnet-4",
+        "openrouter/anthropic/claude-sonnet-4",
     )
+    assert provider.as_litellm_call_kwargs() == {
+        "model": "anthropic/claude-sonnet-4",
+        "custom_llm_provider": "openrouter",
+    }
 
 
 def test_llm_provider_parses_bedrock_model():
@@ -23,7 +28,10 @@ def test_llm_provider_parses_bedrock_model():
 
     assert provider.name == "bedrock"
     assert provider.is_bedrock is True
-    assert provider.litellm_model == "anthropic.claude-3-5-sonnet-20241022-v2:0"
+    assert provider.model == "anthropic.claude-3-5-sonnet-20241022-v2:0"
+    assert (
+        provider.canonical_name == "bedrock/anthropic.claude-3-5-sonnet-20241022-v2:0"
+    )
 
 
 def test_llm_provider_handles_unknown_model_without_provider():
@@ -31,17 +39,10 @@ def test_llm_provider_handles_unknown_model_without_provider():
 
     assert provider.name is None
     assert provider.provider_enum is None
-    assert provider.litellm_model == "unknown-model"
+    assert provider.model == "unknown-model"
+    assert provider.canonical_name == "unknown-model"
     assert provider.model_info is None
-
-
-def test_llm_provider_preserves_raw_prefix_for_unknown_provider_fallback():
-    provider = LLMProvider.from_model(model="provider/gpt-4o-mini", api_base=None)
-
-    assert provider.name is None
-    assert provider.raw_prefix == "provider"
-    assert provider.model_name_for_cost == "gpt-4o-mini"
-    assert provider.provider_name_for_cost == "provider"
+    assert provider.as_litellm_call_kwargs() == {"model": "unknown-model"}
 
 
 def test_llm_provider_infers_api_base_from_model_info():

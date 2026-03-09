@@ -34,7 +34,7 @@ def test_model_canonical_name_used_for_capabilities(monkeypatch):
         return model.endswith("gpt-5-mini")
 
     def fake_get_features(model: str | LLMProvider):
-        model_name = model.raw_model if isinstance(model, LLMProvider) else model
+        model_name = model.canonical_name if isinstance(model, LLMProvider) else model
         feature_calls.append(model_name)
         return DummyFeatures(model_name)
 

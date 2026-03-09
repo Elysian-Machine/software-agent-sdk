@@ -385,6 +385,8 @@ def test_llm_responses_forwards_extra_headers_to_litellm(mock_responses):
 
     assert mock_responses.call_count == 1
     _, kwargs = mock_responses.call_args
+    assert kwargs["model"] == "gpt-4o"
+    assert kwargs["custom_llm_provider"] == "openai"
     assert kwargs.get("extra_headers") == headers
 
 

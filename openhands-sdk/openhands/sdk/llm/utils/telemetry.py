@@ -272,9 +272,7 @@ class Telemetry(BaseModel):
 
         # move on to litellm cost calculator
         provider_info = LLMProvider.from_model(model=self.model_name, api_base=None)
-        extra_kwargs["model"] = provider_info.model_name_for_cost
-        if provider_info.provider_name_for_cost is not None:
-            extra_kwargs["custom_llm_provider"] = provider_info.provider_name_for_cost
+        extra_kwargs.update(provider_info.as_litellm_call_kwargs())
         try:
             return float(
                 litellm_completion_cost(completion_response=resp, **extra_kwargs)

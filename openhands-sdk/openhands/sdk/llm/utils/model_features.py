@@ -6,7 +6,7 @@ from openhands.sdk.llm.utils.litellm_provider import LLMProvider
 def _model_variants(model: str | LLMProvider | None) -> tuple[str, ...]:
     if isinstance(model, LLMProvider):
         return tuple(name.strip().lower() for name in model.model_names if name)
-    return (((model or "").strip().lower()),)
+    return ((model or "").strip().lower(),)
 
 
 def model_matches(model: str | LLMProvider | None, patterns: list[str]) -> bool:

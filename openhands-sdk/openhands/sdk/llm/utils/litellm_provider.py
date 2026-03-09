@@ -15,18 +15,17 @@ with warnings.catch_warnings():
 
 @dataclass(frozen=True)
 class LLMProvider:
-    """LiteLLM provider metadata derived from a raw model string.
+    """Parsed LiteLLM provider metadata for a model string.
 
-    This keeps the original user-facing model string, while also exposing the
-    provider-specific model identifier LiteLLM resolved internally.
+    The SDK accepts full model strings at the boundary, but internal provider
+    logic should work from LiteLLM's parsed ``provider`` + ``model`` view.
     """
 
-    raw_model: str
-    requested_api_base: str | None
-    litellm_model: str
+    model: str
     name: str | None
-    dynamic_api_key: str | None
+    requested_api_base: str | None
     resolved_api_base: str | None
+    dynamic_api_key: str | None
 
     @classmethod
     def from_model(cls, *, model: str, api_base: str | None) -> LLMProvider:
@@ -48,12 +47,11 @@ class LLMProvider:
             resolved_api_base = api_base
 
         return cls(
-            raw_model=model,
-            requested_api_base=api_base,
-            litellm_model=parsed_model,
+            model=parsed_model,
             name=provider_name,
-            dynamic_api_key=dynamic_key,
+            requested_api_base=api_base,
             resolved_api_base=resolved_api_base,
+            dynamic_api_key=dynamic_key,
         )
 
     @cached_property
@@ -73,58 +71,40 @@ class LLMProvider:
 
         try:
             return ProviderConfigManager.get_provider_model_info(
-                self.litellm_model, self.provider_enum
+                self.model, self.provider_enum
             )
         except Exception:
             return None
+
+    @property
+    def canonical_name(self) -> str:
+        if self.name is None:
+            return self.model
+        return f"{self.name}/{self.model}"
 
     @property
     def is_bedrock(self) -> bool:
         return self.name == "bedrock"
 
     @property
-    def raw_prefix(self) -> str | None:
-        if "/" not in self.raw_model:
-            return None
-
-        prefix, remainder = self.raw_model.split("/", 1)
-        if not prefix or not remainder:
-            return None
-        return prefix
-
-    @property
-    def raw_model_without_prefix(self) -> str:
-        if self.raw_prefix is None:
-            return self.raw_model
-        return self.raw_model.split("/", 1)[1]
-
-    @property
     def model_names(self) -> tuple[str, ...]:
         """Return the useful model-name variants for downstream matching."""
-        names = [self.raw_model]
-        if self.litellm_model != self.raw_model:
-            names.append(self.litellm_model)
-        if self.name is not None:
-            names.append(f"{self.name}/{self.litellm_model}")
+        names = [self.model]
+        if self.canonical_name != self.model:
+            names.append(self.canonical_name)
         return tuple(dict.fromkeys(names))
 
-    @property
-    def provider_name_for_cost(self) -> str | None:
-        return self.name or self.raw_prefix
-
-    @property
-    def model_name_for_cost(self) -> str:
+    def as_litellm_call_kwargs(self) -> dict[str, str]:
+        kwargs = {"model": self.model}
         if self.name is not None:
-            return self.litellm_model
-        if self.raw_prefix is not None:
-            return self.raw_model_without_prefix
-        return self.litellm_model
+            kwargs["custom_llm_provider"] = self.name
+        return kwargs
 
     def infer_api_base(self) -> str | None:
         """Infer a provider API base without reimplementing provider logic."""
         try:
             get_api_base = cast(Any, litellm).get_api_base
-            api_base = get_api_base(self.raw_model, {})
+            api_base = get_api_base(self.canonical_name, {})
             if api_base:
                 return cast(str, api_base)
         except Exception:

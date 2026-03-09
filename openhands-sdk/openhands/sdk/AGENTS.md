@@ -37,11 +37,14 @@ See the [project root AGENTS.md](../../../AGENTS.md) for repository-wide policie
 - If you need Bedrock bearer-token auth, set `AWS_BEARER_TOKEN_BEDROCK` in the environment
   (instead of using `LLM_API_KEY`).
 - Prefer `openhands.sdk.llm.utils.litellm_provider.LLMProvider` for runtime/provider-aware
-  logic instead of manually splitting `LLM.model`. It preserves the raw model string while
-  exposing LiteLLM's parsed provider/model view.
+  logic instead of manually splitting `LLM.model`. Accept the full model string at the SDK
+  boundary, then normalize immediately into LiteLLM's parsed `provider` + `model` view.
+- Do not duplicate both raw and parsed model strings inside the provider abstraction. The
+  boundary string belongs in config/public API; internal transport and feature logic should use
+  the parsed provider/model pair (or an opaque model string when LiteLLM cannot infer more).
 - Keep `unverified_models` conservative for UI bucketing: LiteLLM inference is useful for
-  transport behavior, but it can classify ambiguous raw IDs (for example regional Bedrock IDs
-  or arbitrary `prefix/model` strings) more aggressively than the UI should.
+  transport behavior, but it can classify ambiguous raw IDs (for example regional Bedrock IDs)
+  more aggressively than the UI should.
 
 ## Event Type Deprecation Policy
 

@@ -870,9 +870,10 @@ class LLM(BaseModel, RetryMixin, NonNativeToolCallingMixin):
                         cast(ResponseInputParam, input_items) if input_items else ""
                     )
                     api_key_value = self._get_litellm_api_key_value()
+                    provider_info = self._get_litellm_provider_info()
 
                     ret = litellm_responses(
-                        model=self.model,
+                        **provider_info.as_litellm_call_kwargs(),
                         input=typed_input,
                         instructions=instructions,
                         tools=resp_tools,
@@ -994,7 +995,11 @@ class LLM(BaseModel, RetryMixin, NonNativeToolCallingMixin):
         model_for_capabilities = self._model_name_for_capabilities()
         if (
             self._capabilities_provider_info is None
-            or self._capabilities_provider_info.raw_model != model_for_capabilities
+            or (
+                self._capabilities_provider_info.model != model_for_capabilities
+                and self._capabilities_provider_info.canonical_name
+                != model_for_capabilities
+            )
             or self._capabilities_provider_info.requested_api_base != self.base_url
         ):
             self._capabilities_provider_info = LLMProvider.from_model(
@@ -1055,10 +1060,11 @@ class LLM(BaseModel, RetryMixin, NonNativeToolCallingMixin):
                     message="Accessing the 'model_fields' attribute.*",
                 )
                 api_key_value = self._get_litellm_api_key_value()
+                provider_info = self._get_litellm_provider_info()
 
                 # Some providers need renames handled in _normalize_call_kwargs.
                 ret = litellm_completion(
-                    model=self.model,
+                    **provider_info.as_litellm_call_kwargs(),
                     api_key=api_key_value,
                     api_base=self.base_url,
                     api_version=self.api_version,
