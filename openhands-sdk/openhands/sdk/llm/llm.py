@@ -391,7 +391,6 @@ class LLM(BaseModel, RetryMixin, NonNativeToolCallingMixin):
     _telemetry: Telemetry | None = PrivateAttr(default=None)
     _is_subscription: bool = PrivateAttr(default=False)
     _provider_info: LLMProvider | None = PrivateAttr(default=None)
-    _capabilities_provider_info: LLMProvider | None = PrivateAttr(default=None)
 
     model_config: ClassVar[ConfigDict] = ConfigDict(
         extra="ignore", arbitrary_types_allowed=True
@@ -991,23 +990,6 @@ class LLM(BaseModel, RetryMixin, NonNativeToolCallingMixin):
             )
         return self._provider_info
 
-    def _get_capabilities_provider_info(self) -> LLMProvider:
-        model_for_capabilities = self._model_name_for_capabilities()
-        if (
-            self._capabilities_provider_info is None
-            or (
-                self._capabilities_provider_info.model != model_for_capabilities
-                and self._capabilities_provider_info.canonical_name
-                != model_for_capabilities
-            )
-            or self._capabilities_provider_info.requested_api_base != self.base_url
-        ):
-            self._capabilities_provider_info = LLMProvider.from_model(
-                model=model_for_capabilities,
-                api_base=self.base_url,
-            )
-        return self._capabilities_provider_info
-
     def _infer_litellm_provider(self) -> str | None:
         return self._get_litellm_provider_info().name
 
@@ -1229,18 +1211,14 @@ class LLM(BaseModel, RetryMixin, NonNativeToolCallingMixin):
         # only Anthropic models need explicit caching breakpoints
         return (
             self.caching_prompt
-            and get_features(
-                self._get_capabilities_provider_info()
-            ).supports_prompt_cache
+            and get_features(self._model_name_for_capabilities()).supports_prompt_cache
         )
 
     def uses_responses_api(self) -> bool:
         """Whether this model uses the OpenAI Responses API path."""
 
         # by default, uses = supports
-        return get_features(
-            self._get_capabilities_provider_info()
-        ).supports_responses_api
+        return get_features(self._model_name_for_capabilities()).supports_responses_api
 
     @property
     def model_info(self) -> dict | None:
@@ -1285,7 +1263,7 @@ class LLM(BaseModel, RetryMixin, NonNativeToolCallingMixin):
         if self.is_caching_prompt_active():
             self._apply_prompt_caching(messages)
 
-        model_features = get_features(self._get_capabilities_provider_info())
+        model_features = get_features(self._model_name_for_capabilities())
         cache_enabled = self.is_caching_prompt_active()
         vision_enabled = self.vision_is_active()
         function_calling_enabled = self.native_tool_calling
