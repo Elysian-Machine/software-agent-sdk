@@ -2,14 +2,14 @@
 
 from pathlib import Path
 
-from openhands.sdk import Agent, agent_definition_to_factory, load_agents_from_dir
+from openhands.sdk import Agent, agent_definition_to_factory
 from openhands.sdk.context.condenser import (
     LLMSummarizingCondenser,
 )
 from openhands.sdk.context.condenser.base import CondenserBase
 from openhands.sdk.llm.llm import LLM
 from openhands.sdk.logger import get_logger
-from openhands.sdk.subagent import register_agent_if_absent
+from openhands.sdk.subagent import AgentDefinition, register_agent_if_absent
 from openhands.sdk.tool import Tool
 
 
@@ -111,18 +111,23 @@ def register_builtins_agents(cli_mode: bool = False) -> list[str]:
     )
 
     subagent_dir = Path(__file__).parent / "subagents"
-    builtins_agents_def = load_agents_from_dir(subagent_dir)
 
-    # if we are in cli mode, we filter out the default agent (with browser tool)
-    # otherwise, we filter out the default cli agent
-    if cli_mode:
-        builtins_agents_def = [
-            agent for agent in builtins_agents_def if agent.name != "default"
-        ]
-    else:
-        builtins_agents_def = [
-            agent for agent in builtins_agents_def if agent.name != "default cli mode"
-        ]
+    builtins_agents_def: list[AgentDefinition] = []
+    for md_file in sorted(subagent_dir.iterdir()):
+        if md_file.suffix != ".md":
+            continue
+        if md_file.name == "default.md" and cli_mode:
+            continue
+        if md_file.name == "default_cli.md" and not cli_mode:
+            continue
+        try:
+            agent_def = AgentDefinition.load(md_file)
+            builtins_agents_def.append(agent_def)
+            logger.debug(f"Loaded agent definition '{agent_def.name}' from {md_file}")
+        except Exception:
+            logger.warning(
+                f"Failed to load agent definition from {md_file}", exc_info=True
+            )
 
     registered: list[str] = []
     for agent_def in builtins_agents_def:

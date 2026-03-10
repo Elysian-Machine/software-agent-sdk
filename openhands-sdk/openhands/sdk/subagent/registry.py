@@ -379,7 +379,12 @@ def get_factory_info() -> str:
 
     info_lines = []
     for name, factory in sorted(user_factories.items()):
-        info_lines.append(f"- **{name}**: {factory.definition.description}")
+        defn = factory.definition
+        line = f"- **{name}**: {defn.description}"
+        if defn.tools:
+            tools_str = ", ".join(defn.tools)
+            line += f" (tools: {tools_str})"
+        info_lines.append(line)
 
     return "\n".join(info_lines)
 
