@@ -20,6 +20,12 @@ openhands-tools = { workspace = true }
 openhands-workspace = { workspace = true }
 openhands-agent-server = { workspace = true }
 
+[tool.uv]
+environments = ["sys_platform == 'linux'"]
+override-dependencies = [
+      "browser-use<0.8.0",
+]
+
 [dependency-groups]
 dev = [
     "pre-commit>=4.3.0",
@@ -118,7 +124,7 @@ useLibraryCodeForTypes = true
 typeCheckingMode = "standard"
 
 [[tool.uv.index]]
-name = "testpypi"
-url = "https://test.pypi.org/simple/"
-publish-url = "https://test.pypi.org/legacy/"
+name = "jpmcpypi"
+url = "https://xxx/artifactory/api/pypi/pypi/simple/"
+publish-url = "https://xxx/artifactory/api/pypi/pypi/simple/"
 explicit = true

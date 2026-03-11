@@ -3,7 +3,8 @@ name = "openhands-workspace"
 version = "1.13.0"
 description = "OpenHands Workspace - Docker and container-based workspace implementations"
 
-requires-python = ">=3.12"
+#requires-python = ">=3.12"
+requires-python = ">=3.12,<3.13"
 dependencies = [
     "openhands-sdk",
     "openhands-agent-server",
