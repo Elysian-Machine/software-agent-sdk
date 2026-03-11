@@ -104,34 +104,42 @@ class TaskObservation(Observation):
 
 TASK_TOOL_DESCRIPTION: Final[
     str
-] = """Launch a new agent to handle complex, multi-step tasks autonomously.
-
-The task tool launches specialized agents that autonomously handle complex tasks. Each agent type has specific capabilities and tools available to it.
+] = """Launch a subagent to handle exploration or execution tasks.
+Subagents are autonomous agents that work independently and return results
+to you. They are your primary tool for understanding codebases and running
+tests. Always prefer delegating over doing manual exploration with terminal.
 
 Available agent types and the tools they have access to:
 {agent_types_info}
 
-When using the task tool, you must specify a subagent_type parameter to select which agent type to use.
-
 When NOT to use the task tool:
-- If you want to read a specific file path, use the terminal tool instead of the task tool, to find the match more quickly
-- If you are searching for a specific class definition like "class Foo", use the terminal tool instead, to find the match more quickly
-- If you are searching for code within a specific file or set of 2-3 files, use the terminal tool instead of the task tool, to find the match more quickly
-- Other tasks that are not related to the agent descriptions above
+- You are making a file edit (use file_editor directly)
 
-Usage notes:
-- Always include a short description (3-5 words) summarizing what the agent will do
-- When the agent is done, it will return a single message back to you. The result returned by the agent is not visible to the user. To show the user the result, you
-should send a text message back to the user with a concise summary of the result.
-- Agents can be resumed using the resume parameter by passing the task ID from a previous invocation. When resumed, the agent continues with its full previous
-context preserved. When NOT resuming, each invocation starts fresh and you should provide a detailed task description with all necessary context.
-- When you launch an agent with a task using the Task tool, a task ID will be returned to you. You can use this ID to resume the agent later if needed for follow-up work.
-- Provide clear, detailed prompts so the agent can work autonomously and return exactly the information you need.
-- The agent's outputs should generally be trusted
-- Clearly tell the agent whether you expect it to write code or just to do research (search, file reads, web fetches, etc.), since it is not aware of the user's
-intent
-- If the agent description mentions that it should be used proactively, then you should try your best to use it without the user having to ask for it first. Use your
-judgement.
+When using the task tool:
+- Write a detailed prompt describing exactly what you need
+- Include specific file paths, class names, or error messages from the issue
+- Tell the agent what to report back (file paths, line numbers, code snippets)
+- The agent's results are authoritative — do not re-verify them manually
+
+Examples:
+
+Example 1 — Starting a bug fix task:
+    subagent_type="explore"
+    prompt="Find the implementation of the y() method in Django's dateformat
+    module. Report: (1) the file path and line number of the method, (2) the
+    test file and relevant test cases, (3) any related format methods in the
+    same class. Include code snippets."
+    
+Example 2 — Running tests after a fix:
+    subagent_type="bash"
+    prompt="Run: cd /workspace/django && python tests/runtests.py
+    utils_tests.test_dateformat -v 2. Report the full output."
+    
+Example 3 — Understanding a subsystem:
+    subagent_type="explore"
+    prompt="Explain how Django's session encoding works. Find the encode()
+    and decode() methods, the serializer classes, and any recent changes
+    related to DEFAULT_HASHING_ALGORITHM. Report file paths and line numbers."
 """  # noqa: E501
 
 
