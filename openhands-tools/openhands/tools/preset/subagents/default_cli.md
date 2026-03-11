@@ -1,5 +1,5 @@
 ---
-name: general purpose
+name: general purpose (cli mode)
 description: >-
     General-purpose subagent for CLI environments. Can read,
     write, and edit code, run shell commands, and track tasks. Use this when the
