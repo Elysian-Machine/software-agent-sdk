@@ -203,8 +203,9 @@ These tests exercise real agent-LLM interactions including tool invocation, file
 
 - **Unit tests** (run on every commit): [github.com/OpenHands/software-agent-sdk/actions/workflows/tests.yml](https://github.com/OpenHands/software-agent-sdk/actions/workflows/tests.yml)
 - **Integration tests** (run nightly across multiple models): [github.com/OpenHands/software-agent-sdk/actions/workflows/integration-runner.yml](https://github.com/OpenHands/software-agent-sdk/actions/workflows/integration-runner.yml)
-- **Example tests** (run periodically): [github.com/OpenHands/software-agent-sdk/actions/workflows/test-examples.yml](https://github.com/OpenHands/software-agent-sdk/actions/workflows/test-examples.yml)
-- **Nightly results tracker** (pass rates, costs, and links to detailed agent logs): [github.com/OpenHands/software-agent-sdk/issues/2078](https://github.com/OpenHands/software-agent-sdk/issues/2078)
+- **Example tests** (run periodically): [github.com/OpenHands/software-agent-sdk/actions/workflows/run-examples.yml](https://github.com/OpenHands/software-agent-sdk/actions/workflows/run-examples.yml)
+- **Integration test results tracker** (pass rates, costs, and links to detailed agent logs): [github.com/OpenHands/software-agent-sdk/issues/2078](https://github.com/OpenHands/software-agent-sdk/issues/2078)
+- **Example test results tracker** (per-example status, duration, and cost): [github.com/OpenHands/software-agent-sdk/issues/976](https://github.com/OpenHands/software-agent-sdk/issues/976)
 
 Each workflow run includes full logs, and the nightly tracker issue aggregates results with per-model breakdowns. This provides an independent, continuously-updated record of the SDK's testing methodology in action — no API keys required to inspect.
 
