@@ -1,39 +1,29 @@
-# Proposed Revision to PR #1847 Design Document
+# Design: Python-Packaged Plugins for OpenHands
 
-This document outlines revisions to the "Python-Packaged Plugins" design based on discussion about maintaining a consistent plugin layout between source-only and Python-packaged plugins.
+This document describes how to distribute OpenHands plugins as Python packages (pip/uv installable) while maintaining the standard plugin directory layout.
 
 ---
 
-## Key Change: Plugin Layout Stays at Root
+## Overview
 
-### Previous Design (in current PR #1847)
+### Goals
 
-The current design places plugin content **inside** the Python module:
+1. **Consistent Layout**: Plugin content (`.plugin/`, `skills/`, `commands/`, etc.) stays at repository root — identical to source-only plugins
+2. **Python Package Distribution**: Enable `pip install openhands-plugin-xyz` workflow
+3. **Dependency Management**: Leverage pip/uv for transitive dependency resolution
+4. **Custom Agents**: Support plugins that define custom agent classes with specialized tools
+5. **Marketplace Compatible**: Work seamlessly in marketplace monorepos alongside source-only plugins
 
-```
-openhands-plugin-security/
-├── pyproject.toml
-├── README.md
-└── openhands_plugin_security/       # Plugin content inside module
-    ├── __init__.py
-    ├── agent.py
-    ├── .plugin/plugin.json
-    ├── skills/
-    └── commands/
-```
+### Plugin Layout
 
-**Problem**: This makes Python-packaged plugins look structurally different from source-only plugins, which have content at the root.
-
-### Revised Design: Plugin Content at Root
-
-Plugin content stays at the repository root (identical to source-only plugins), with Python code in a `src/` subdirectory:
+A Python-packaged plugin maintains the standard plugin structure at the repository root, with Python code in a `src/` subdirectory:
 
 ```
 security-scanner/                    # Repository root = Plugin root
-├── pyproject.toml                   # Indicates this is also a Python package
+├── pyproject.toml                   # Indicates this is a Python package
 ├── README.md
 │
-├── .plugin/                         # Plugin content at root (normal location)
+├── .plugin/                         # Plugin content at root (standard location)
 │   └── plugin.json
 ├── skills/
 │   └── security-scan.md
@@ -50,51 +40,11 @@ security-scanner/                    # Repository root = Plugin root
         └── tools.py                 # Custom tool definitions
 ```
 
-**Benefit**: The plugin layout is **identical** to source-only plugins. The only additions are `pyproject.toml` and `src/`.
+To convert a source-only plugin to a Python package, add `pyproject.toml` and `src/` — the plugin content stays exactly where it is.
 
 ---
 
-## Comparison: Source-Only vs Python-Packaged
-
-| Aspect | Source-Only Plugin | Python-Packaged Plugin |
-|--------|-------------------|------------------------|
-| `.plugin/` | Root | Root |
-| `skills/` | Root | Root |
-| `commands/` | Root | Root |
-| `hooks/` | Root | Root |
-| `.mcp.json` | Root | Root |
-| Python code | None | `src/<module>/` |
-| `pyproject.toml` | None | Root |
-| Consumed via | Git clone / local path | Git clone OR `pip install` |
-
-**Source-only plugin:**
-```
-code-review/
-├── .plugin/plugin.json
-├── skills/
-│   └── review.md
-└── commands/
-    └── review.md
-```
-
-**Python-packaged plugin (same layout + Python code):**
-```
-security-scanner/
-├── .plugin/plugin.json              # Same location
-├── skills/                          # Same location
-│   └── scan.md
-├── commands/                        # Same location
-│   └── run-scan.md
-├── pyproject.toml                   # Added
-└── src/                             # Added
-    └── openhands_plugin_security/
-        ├── __init__.py
-        └── agent.py
-```
-
----
-
-## Build Solution: Hatchling's `force-include`
+## Build Configuration: Hatchling
 
 ### The Challenge
 
@@ -343,22 +293,23 @@ packages = ["src/openhands_plugin_security"]
 
 ---
 
-## Open Questions (carried forward)
+## Open Questions
 
-1. **Isolated installation directory**: Still `~/.openhands/plugins/`? Or use virtual environments?
+1. **Isolated installation directory**: Should plugins install to `~/.openhands/plugins/` or use virtual environments?
 
-2. **Version resolution**: When both source and PyPI available, which wins? Latest version? User choice?
+2. **Version resolution**: When both source and PyPI are available, which takes precedence? Latest version? User choice?
 
-3. **Plugin-to-plugin dependencies**: Express in `[project] dependencies`? How does loader handle?
+3. **Plugin-to-plugin dependencies**: How should plugin dependencies be expressed and resolved?
 
-4. **Agent factory interface**: Exact signature for `create_agent()`? What config is passed?
+4. **Agent factory interface**: What is the exact signature for `create_agent()`? What config is passed?
 
 ---
 
-## Next Steps
+## Implementation Checklist
 
-1. [ ] Revise PR #1847 with this layout approach
-2. [ ] Create reference plugin using hatchling + force-include
-3. [ ] Implement `pypi:` source handling in `Plugin.fetch()`
-4. [ ] Implement agent entry point loading
-5. [ ] Test with marketplace monorepo structure
+- [ ] Create reference plugin using hatchling + force-include
+- [ ] Add `pypi:` source handling to `Plugin.fetch()`
+- [ ] Implement `openhands.agents` entry point loading
+- [ ] Add `Plugin.install_from_source()` for local Python package installation
+- [ ] Test with marketplace monorepo containing mixed plugin types
+- [ ] Document plugin authoring guide
