@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from typing import Literal
+from enum import Enum
 
 from pydantic import BaseModel
 
@@ -9,18 +9,18 @@ SETTINGS_METADATA_KEY = "openhands_settings"
 SETTINGS_SECTION_METADATA_KEY = "openhands_settings_section"
 
 
+class SettingProminence(str, Enum):
+    CRITICAL = "critical"
+    MAJOR = "major"
+    MINOR = "minor"
+
+
 class SettingsSectionMetadata(BaseModel):
     key: str
-    label: str
-    order: int
+    label: str | None = None
 
 
 class SettingsFieldMetadata(BaseModel):
-    label: str
-    order: int
-    widget: Literal["text", "password", "number", "boolean", "select"] | None = None
-    placeholder: str | None = None
-    advanced: bool = False
+    label: str | None = None
+    prominence: SettingProminence = SettingProminence.MAJOR
     depends_on: tuple[str, ...] = ()
-    help_text: str | None = None
-    slash_command: str | None = None

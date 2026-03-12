@@ -58,6 +58,7 @@ from openhands.sdk.settings import (
     export_settings_schema,
 )
 from openhands.sdk.settings_metadata import (
+    SettingProminence,
     SettingsFieldMetadata,
     SettingsSectionMetadata,
 )
@@ -130,6 +131,7 @@ __all__ = [
     "CriticSettings",
     "AgentSettings",
     "SettingsChoice",
+    "SettingProminence",
     "SettingsFieldMetadata",
     "SettingsFieldSchema",
     "SettingsSchema",

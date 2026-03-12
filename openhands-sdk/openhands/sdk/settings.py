@@ -1,27 +1,35 @@
 from __future__ import annotations
 
-from collections.abc import Callable
 from enum import Enum
+from pathlib import Path
 from typing import Any, Literal, get_args, get_origin
 
 from pydantic import BaseModel, Field, SecretStr
 from pydantic.fields import FieldInfo
 
-from openhands.sdk.agent import Agent
-from openhands.sdk.context.condenser import LLMSummarizingCondenser
-from openhands.sdk.critic import IterativeRefinementConfig
-from openhands.sdk.critic.impl.api import APIBasedCritic
 from openhands.sdk.llm import LLM
 from openhands.sdk.settings_metadata import (
     SETTINGS_METADATA_KEY,
     SETTINGS_SECTION_METADATA_KEY,
+    SettingProminence,
     SettingsFieldMetadata,
     SettingsSectionMetadata,
 )
 
 
+SettingsValueType = Literal[
+    "string",
+    "integer",
+    "number",
+    "boolean",
+    "array",
+    "object",
+]
+SettingsChoiceValue = bool | int | float | str
+
+
 class SettingsChoice(BaseModel):
-    value: str
+    value: SettingsChoiceValue
     label: str
 
 
@@ -31,14 +39,11 @@ class SettingsFieldSchema(BaseModel):
     description: str | None = None
     section: str
     section_label: str
-    order: int
-    widget: Literal["text", "password", "number", "boolean", "select"]
-    default: bool | int | float | str | None = None
+    value_type: SettingsValueType
+    default: Any = None
     required: bool = False
-    advanced: bool = False
+    prominence: SettingProminence = SettingProminence.MAJOR
     depends_on: list[str] = Field(default_factory=list)
-    help_text: str | None = None
-    slash_command: str | None = None
     secret: bool = False
     choices: list[SettingsChoice] = Field(default_factory=list)
 
@@ -64,9 +69,7 @@ class CondenserSettings(BaseModel):
         json_schema_extra={
             SETTINGS_METADATA_KEY: SettingsFieldMetadata(
                 label="Enable memory condensation",
-                order=10,
-                widget="boolean",
-                slash_command="condenser",
+                prominence=SettingProminence.CRITICAL,
             ).model_dump()
         },
     )
@@ -76,13 +79,9 @@ class CondenserSettings(BaseModel):
         description="Maximum number of events kept before the condenser runs.",
         json_schema_extra={
             SETTINGS_METADATA_KEY: SettingsFieldMetadata(
-                label="Condenser max size",
-                order=20,
-                widget="number",
+                label="Max size",
+                prominence=SettingProminence.MINOR,
                 depends_on=("enabled",),
-                help_text="Minimum value is 20.",
-                advanced=True,
-                slash_command="condenser-max-size",
             ).model_dump()
         },
     )
@@ -95,9 +94,7 @@ class CriticSettings(BaseModel):
         json_schema_extra={
             SETTINGS_METADATA_KEY: SettingsFieldMetadata(
                 label="Enable critic",
-                order=10,
-                widget="boolean",
-                slash_command="critic",
+                prominence=SettingProminence.CRITICAL,
             ).model_dump()
         },
     )
@@ -106,12 +103,8 @@ class CriticSettings(BaseModel):
         description="When critic evaluation should run.",
         json_schema_extra={
             SETTINGS_METADATA_KEY: SettingsFieldMetadata(
-                label="Critic mode",
-                order=20,
-                widget="select",
+                prominence=SettingProminence.MINOR,
                 depends_on=("enabled",),
-                advanced=True,
-                slash_command="critic-mode",
             ).model_dump()
         },
     )
@@ -123,10 +116,7 @@ class CriticSettings(BaseModel):
         json_schema_extra={
             SETTINGS_METADATA_KEY: SettingsFieldMetadata(
                 label="Enable iterative refinement",
-                order=30,
-                widget="boolean",
                 depends_on=("enabled",),
-                slash_command="iterative-refinement",
             ).model_dump()
         },
     )
@@ -137,11 +127,8 @@ class CriticSettings(BaseModel):
         description="Critic success threshold used for iterative refinement.",
         json_schema_extra={
             SETTINGS_METADATA_KEY: SettingsFieldMetadata(
-                label="Critic threshold",
-                order=40,
-                widget="number",
+                prominence=SettingProminence.MINOR,
                 depends_on=("enabled", "enable_iterative_refinement"),
-                slash_command="critic-threshold",
             ).model_dump()
         },
     )
@@ -152,17 +139,11 @@ class CriticSettings(BaseModel):
         json_schema_extra={
             SETTINGS_METADATA_KEY: SettingsFieldMetadata(
                 label="Max refinement iterations",
-                order=50,
-                widget="number",
+                prominence=SettingProminence.MINOR,
                 depends_on=("enabled", "enable_iterative_refinement"),
-                slash_command="max-refinement-iterations",
             ).model_dump()
         },
     )
-
-
-CriticFactory = Callable[[LLM, "AgentSettings", Agent | None], APIBasedCritic | None]
-AgentFactory = Callable[[LLM], Agent]
 
 
 def _default_llm_settings() -> LLM:
@@ -179,7 +160,6 @@ class AgentSettings(BaseModel):
             SETTINGS_SECTION_METADATA_KEY: SettingsSectionMetadata(
                 key="llm",
                 label="LLM",
-                order=10,
             ).model_dump()
         },
     )
@@ -190,7 +170,6 @@ class AgentSettings(BaseModel):
             SETTINGS_SECTION_METADATA_KEY: SettingsSectionMetadata(
                 key="condenser",
                 label="Condenser",
-                order=20,
             ).model_dump()
         },
     )
@@ -201,140 +180,9 @@ class AgentSettings(BaseModel):
             SETTINGS_SECTION_METADATA_KEY: SettingsSectionMetadata(
                 key="critic",
                 label="Critic",
-                order=30,
             ).model_dump()
         },
     )
-
-    @classmethod
-    def from_agent(
-        cls,
-        agent: Agent,
-        *,
-        enable_critic: bool | None = None,
-    ) -> AgentSettings:
-        condenser_defaults = cls.model_fields["condenser"].get_default(
-            call_default_factory=True
-        )
-        condenser_max_size = condenser_defaults.max_size
-        condenser_enabled = False
-        if isinstance(agent.condenser, LLMSummarizingCondenser):
-            condenser_enabled = True
-            condenser_max_size = agent.condenser.max_size
-
-        critic = agent.critic
-        critic_enabled = (
-            enable_critic if enable_critic is not None else critic is not None
-        )
-        critic_defaults = cls.model_fields["critic"].get_default(
-            call_default_factory=True
-        )
-        critic_mode: CriticMode = critic_defaults.mode
-        enable_iterative_refinement = critic_defaults.enable_iterative_refinement
-        critic_threshold = critic_defaults.threshold
-        max_refinement_iterations = critic_defaults.max_refinement_iterations
-        if critic is not None:
-            critic_mode = critic.mode
-            if critic.iterative_refinement is not None:
-                enable_iterative_refinement = True
-                critic_threshold = critic.iterative_refinement.success_threshold
-                max_refinement_iterations = critic.iterative_refinement.max_iterations
-
-        return cls.model_validate(
-            {
-                "llm": agent.llm.model_dump(mode="python"),
-                "condenser": {
-                    "enabled": condenser_enabled,
-                    "max_size": condenser_max_size,
-                },
-                "critic": {
-                    "enabled": critic_enabled,
-                    "mode": critic_mode,
-                    "enable_iterative_refinement": enable_iterative_refinement,
-                    "threshold": critic_threshold,
-                    "max_refinement_iterations": max_refinement_iterations,
-                },
-            }
-        )
-
-    def apply_to_agent(
-        self,
-        agent: Agent | None = None,
-        *,
-        agent_factory: AgentFactory | None = None,
-        critic_factory: CriticFactory | None = None,
-    ) -> Agent:
-        llm = LLM.model_validate(self.llm.model_dump(mode="python"))
-
-        base_agent = agent
-        if base_agent is None:
-            base_agent = (
-                agent_factory(llm) if agent_factory is not None else Agent(llm=llm)
-            )
-        else:
-            base_agent = base_agent.model_copy(update={"llm": llm})
-
-        condenser = base_agent.condenser
-        if self.condenser.enabled:
-            condenser_llm = llm.model_copy(update={"usage_id": "condenser"})
-            if isinstance(condenser, LLMSummarizingCondenser):
-                condenser = condenser.model_copy(
-                    update={"llm": condenser_llm, "max_size": self.condenser.max_size}
-                )
-            else:
-                condenser = LLMSummarizingCondenser(
-                    llm=condenser_llm,
-                    max_size=self.condenser.max_size,
-                )
-        else:
-            condenser = None
-
-        critic = base_agent.critic
-        if self.critic.enabled:
-            iterative_refinement = None
-            if self.critic.enable_iterative_refinement:
-                iterative_refinement = IterativeRefinementConfig(
-                    success_threshold=self.critic.threshold,
-                    max_iterations=self.critic.max_refinement_iterations,
-                )
-
-            if critic_factory is not None:
-                critic = critic_factory(llm, self, base_agent)
-                if critic is not None:
-                    critic = critic.model_copy(
-                        update={
-                            "mode": self.critic.mode,
-                            "iterative_refinement": iterative_refinement,
-                        }
-                    )
-            elif isinstance(critic, APIBasedCritic):
-                critic = critic.model_copy(
-                    update={
-                        "mode": self.critic.mode,
-                        "iterative_refinement": iterative_refinement,
-                    }
-                )
-            else:
-                critic = None
-        else:
-            critic = None
-
-        return base_agent.model_copy(
-            update={"llm": llm, "condenser": condenser, "critic": critic}
-        )
-
-    def to_agent(
-        self,
-        agent: Agent | None = None,
-        *,
-        agent_factory: AgentFactory | None = None,
-        critic_factory: CriticFactory | None = None,
-    ) -> Agent:
-        return self.apply_to_agent(
-            agent,
-            agent_factory=agent_factory,
-            critic_factory=critic_factory,
-        )
 
     @classmethod
     def export_schema(cls) -> SettingsSchema:
@@ -364,7 +212,7 @@ def settings_metadata(field: FieldInfo) -> SettingsFieldMetadata | None:
 
 
 def export_settings_schema(model: type[BaseModel]) -> SettingsSchema:
-    sections: list[tuple[int, SettingsSectionSchema]] = []
+    sections: list[SettingsSectionSchema] = []
     for field in model.model_fields.values():
         section_metadata = settings_section_metadata(field)
         if section_metadata is None:
@@ -375,58 +223,75 @@ def export_settings_schema(model: type[BaseModel]) -> SettingsSchema:
             continue
 
         section_default = field.get_default(call_default_factory=True)
+        section_label = section_metadata.label or _humanize_name(section_metadata.key)
         section = SettingsSectionSchema(
             key=section_metadata.key,
-            label=section_metadata.label,
+            label=section_label,
             fields=[],
         )
         for nested_key, nested_field in nested_model.model_fields.items():
             metadata = settings_metadata(nested_field)
-            if metadata is None:
-                continue
-
-            widget = metadata.widget or _infer_widget(nested_field.annotation)
             default_value = None
             if isinstance(section_default, BaseModel):
                 default_value = getattr(section_default, nested_key)
             section.fields.append(
                 SettingsFieldSchema(
                     key=f"{section_metadata.key}.{nested_key}",
-                    label=metadata.label,
+                    label=(
+                        metadata.label
+                        if metadata is not None and metadata.label is not None
+                        else _humanize_name(nested_key)
+                    ),
                     description=nested_field.description,
                     section=section_metadata.key,
-                    section_label=section_metadata.label,
-                    order=metadata.order,
-                    widget=widget,
+                    section_label=section_label,
+                    value_type=_infer_value_type(nested_field.annotation),
                     default=_normalize_default(default_value),
                     required=not _is_optional(nested_field.annotation),
-                    advanced=metadata.advanced,
+                    prominence=(
+                        metadata.prominence
+                        if metadata is not None
+                        else SettingProminence.MAJOR
+                    ),
                     depends_on=[
                         f"{section_metadata.key}.{dependency}"
-                        for dependency in metadata.depends_on
+                        for dependency in (
+                            metadata.depends_on if metadata is not None else ()
+                        )
                     ],
-                    help_text=metadata.help_text,
-                    slash_command=metadata.slash_command,
-                    secret=widget == "password",
+                    secret=_contains_secret(nested_field.annotation),
                     choices=_extract_choices(nested_field.annotation),
                 )
             )
+        sections.append(section)
 
-        section.fields.sort(key=lambda field_schema: field_schema.order)
-        sections.append((section_metadata.order, section))
-
-    sections.sort(key=lambda item: item[0])
-    return SettingsSchema(
-        model_name=model.__name__,
-        sections=[section for _, section in sections],
-    )
+    return SettingsSchema(model_name=model.__name__, sections=sections)
 
 
 def _nested_model_type(annotation: Any) -> type[BaseModel] | None:
-    inner = _strip_optional(annotation)
-    if isinstance(inner, type) and issubclass(inner, BaseModel):
-        return inner
+    candidates = _annotation_options(annotation)
+    if len(candidates) != 1:
+        return None
+
+    candidate = candidates[0]
+    if isinstance(candidate, type) and issubclass(candidate, BaseModel):
+        return candidate
     return None
+
+
+def _annotation_options(annotation: Any) -> tuple[Any, ...]:
+    origin = get_origin(annotation)
+    if origin is None or origin is Literal:
+        return (annotation,)
+    if origin in (list, tuple, set, frozenset, dict):
+        return (annotation,)
+
+    options: list[Any] = []
+    for arg in get_args(annotation):
+        if arg is type(None):
+            continue
+        options.extend(_annotation_options(arg))
+    return tuple(options) or (annotation,)
 
 
 def _is_optional(annotation: Any) -> bool:
@@ -436,58 +301,127 @@ def _is_optional(annotation: Any) -> bool:
     return any(arg is type(None) for arg in get_args(annotation))
 
 
-def _strip_optional(annotation: Any) -> Any:
-    origin = get_origin(annotation)
-    if origin is None:
-        return annotation
-    args = [arg for arg in get_args(annotation) if arg is not type(None)]
-    if len(args) == 1:
-        return args[0]
-    return annotation
+def _contains_secret(annotation: Any) -> bool:
+    return any(option is SecretStr for option in _annotation_options(annotation))
 
 
-def _infer_widget(
-    annotation: Any,
-) -> Literal["text", "password", "number", "boolean", "select"]:
-    inner = _strip_optional(annotation)
-    origin = get_origin(inner)
-    if inner is SecretStr:
-        return "password"
-    if inner is bool:
+def _infer_value_type(annotation: Any) -> SettingsValueType:
+    choices = _choice_values(annotation)
+    if choices:
+        return _value_type_for_values(choices)
+
+    options = _annotation_options(annotation)
+    if all(_is_stringish(option) for option in options):
+        return "string"
+    if all(option is bool for option in options):
         return "boolean"
-    if inner in (int, float):
+    if all(option is int for option in options):
+        return "integer"
+    if all(option in (int, float) for option in options):
         return "number"
-    if origin is Literal:
-        return "select"
-    if isinstance(inner, type) and issubclass(inner, Enum):
-        return "select"
-    return "text"
+    if all(_is_array_annotation(option) for option in options):
+        return "array"
+    if all(_is_object_annotation(option) for option in options):
+        return "object"
+    return "string"
 
 
-def _extract_choices(annotation: Any) -> list[SettingsChoice]:
-    inner = _strip_optional(annotation)
-    origin = get_origin(inner)
+def _is_stringish(annotation: Any) -> bool:
+    return annotation in (str, SecretStr, Path)
+
+
+def _is_array_annotation(annotation: Any) -> bool:
+    return get_origin(annotation) in (list, tuple, set, frozenset)
+
+
+def _is_object_annotation(annotation: Any) -> bool:
+    origin = get_origin(annotation)
+    if origin is dict:
+        return True
+    return isinstance(annotation, type) and issubclass(annotation, BaseModel)
+
+
+def _choice_values(annotation: Any) -> list[SettingsChoiceValue]:
+    inner = _annotation_options(annotation)
+    if len(inner) != 1:
+        return []
+
+    candidate = inner[0]
+    origin = get_origin(candidate)
     if origin is Literal:
         return [
-            SettingsChoice(value=str(value), label=str(value))
-            for value in get_args(inner)
+            value
+            for value in get_args(candidate)
+            if isinstance(value, (bool, int, float, str))
         ]
-    if isinstance(inner, type) and issubclass(inner, Enum):
+    if isinstance(candidate, type) and issubclass(candidate, Enum):
         return [
-            SettingsChoice(
-                value=str(member.value),
-                label=member.name.replace("_", " ").title(),
-            )
-            for member in inner
+            member.value
+            for member in candidate
+            if isinstance(member.value, (bool, int, float, str))
         ]
     return []
 
 
-def _normalize_default(value: Any) -> bool | int | float | str | None:
+def _value_type_for_values(values: list[SettingsChoiceValue]) -> SettingsValueType:
+    if all(isinstance(value, bool) for value in values):
+        return "boolean"
+    if all(isinstance(value, int) and not isinstance(value, bool) for value in values):
+        return "integer"
+    if all(
+        isinstance(value, (int, float)) and not isinstance(value, bool)
+        for value in values
+    ):
+        return "number"
+    return "string"
+
+
+def _extract_choices(annotation: Any) -> list[SettingsChoice]:
+    inner = _annotation_options(annotation)
+    if len(inner) != 1:
+        return []
+
+    candidate = inner[0]
+    origin = get_origin(candidate)
+    if origin is Literal:
+        return [
+            SettingsChoice(value=value, label=str(value))
+            for value in get_args(candidate)
+            if isinstance(value, (bool, int, float, str))
+        ]
+    if isinstance(candidate, type) and issubclass(candidate, Enum):
+        return [
+            SettingsChoice(
+                value=member.value,
+                label=_humanize_name(member.name),
+            )
+            for member in candidate
+            if isinstance(member.value, (bool, int, float, str))
+        ]
+    return []
+
+
+def _normalize_default(value: Any) -> Any:
     if isinstance(value, SecretStr):
         return None
     if isinstance(value, Enum):
-        return str(value.value)
+        return _normalize_default(value.value)
+    if isinstance(value, Path):
+        return str(value)
+    if isinstance(value, BaseModel):
+        return value.model_dump(mode="json")
+    if isinstance(value, dict):
+        return {str(key): _normalize_default(item) for key, item in value.items()}
+    if isinstance(value, (list, tuple, set, frozenset)):
+        return [_normalize_default(item) for item in value]
     if isinstance(value, (bool, int, float, str)) or value is None:
         return value
     return None
+
+
+def _humanize_name(name: str) -> str:
+    acronyms = {"api", "aws", "id", "llm", "url"}
+    words = []
+    for part in name.split("_"):
+        words.append(part.upper() if part in acronyms else part.capitalize())
+    return " ".join(words)
