@@ -424,12 +424,12 @@ class BuildOptions(BaseModel):
     @property
     def cache_tags(self) -> tuple[str, str]:
         base = f"buildcache-{self.target}-{self.base_image_slug}"
-        if self.git_ref in ("main", "refs/heads/main"):
-            return f"{base}-main", base
-        elif self.git_ref != "unknown":
-            return f"{base}-{_sanitize_branch(self.git_ref)}", base
-        else:
-            return base, base
+        return _scoped_cache_tags(base, self.git_ref)
+
+    @property
+    def shared_cache_tags(self) -> tuple[str, str]:
+        base = f"buildcache-shared-{self.target}"
+        return _scoped_cache_tags(base, self.git_ref)
 
     @property
     def all_tags(self) -> list[str]:
@@ -558,6 +558,14 @@ def _get_dockerfile_path(sdk_project_root: Path) -> Path:
     return dockerfile_path
 
 
+def _scoped_cache_tags(base: str, git_ref: str) -> tuple[str, str]:
+    if git_ref in ("main", "refs/heads/main"):
+        return f"{base}-main", f"{base}-main"
+    if git_ref != "unknown":
+        return f"{base}-{_sanitize_branch(git_ref)}", f"{base}-main"
+    return base, f"{base}-main"
+
+
 # --- single entry point ---
 
 
@@ -569,7 +577,8 @@ def build(opts: BuildOptions) -> list[str]:
         push = IN_CI
 
     tags = opts.all_tags
-    cache_tag, cache_tag_base = opts.cache_tags
+    cache_tag, cache_tag_fallback = opts.cache_tags
+    shared_cache_tag, shared_cache_tag_fallback = opts.shared_cache_tags
 
     ctx = _make_build_context(opts.sdk_project_root, opts.prebuilt_sdist)
     logger.info(f"[build] Clean build context: {ctx}")
@@ -600,14 +609,26 @@ def build(opts: BuildOptions) -> list[str]:
 
     if push:
         # Remote/CI builds: use registry cache + inline for maximum reuse.
-        cache_args += [
-            "--cache-from",
-            f"type=registry,ref={opts.image}:{cache_tag}",
-            "--cache-from",
-            f"type=registry,ref={opts.image}:{cache_tag_base}-main",
-            "--cache-to",
-            f"type=registry,ref={opts.image}:{cache_tag},mode=max",
-        ]
+        seen_cache_from: set[str] = set()
+        for cache_ref in (
+            cache_tag,
+            cache_tag_fallback,
+            shared_cache_tag,
+            shared_cache_tag_fallback,
+        ):
+            if cache_ref in seen_cache_from:
+                continue
+            seen_cache_from.add(cache_ref)
+            cache_args += [
+                "--cache-from",
+                f"type=registry,ref={opts.image}:{cache_ref}",
+            ]
+
+        for cache_ref in dict.fromkeys((cache_tag, shared_cache_tag)):
+            cache_args += [
+                "--cache-to",
+                f"type=registry,ref={opts.image}:{cache_ref},mode=max",
+            ]
         logger.info("[build] Cache: registry (remote/CI) + inline")
     else:
         # Local/dev builds: prefer local dir cache if
@@ -648,7 +669,11 @@ def build(opts: BuildOptions) -> list[str]:
         f"[build] Git ref='{opts.git_ref}' sha='{opts.git_sha}' "
         f"package_version='{opts.sdk_version}'"
     )
-    logger.info(f"[build] Cache tag: {cache_tag}")
+    logger.info(
+        "[build] Cache tags: "
+        f"image={cache_tag} fallback={cache_tag_fallback} "
+        f"shared={shared_cache_tag} shared_fallback={shared_cache_tag_fallback}"
+    )
 
     try:
         res = _run(args, cwd=str(ctx))
