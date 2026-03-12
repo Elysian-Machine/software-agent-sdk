@@ -102,10 +102,8 @@ When reviewing code, provide constructive feedback:
 </ROLE>
 
 ## Repository Memory
-- Programmatic settings live in `openhands-sdk/openhands/sdk/settings.py`. Treat `SDKSettings` and `SDKSettings.export_schema()` as the single source of truth for settings fields, UI metadata, and slash-command metadata consumed by downstream clients.
-- `SettingsFieldSchema.required` is derived from field nullability, not from whether Pydantic has a default. This keeps generated UIs from treating required settings like `llm_model` as optional just because the SDK provides a default.
-
-
+- Programmatic settings live in `openhands-sdk/openhands/sdk/settings.py`. Treat `AgentSettings` and `export_settings_schema()` as the canonical structured settings surface in the SDK, and keep that schema focused on neutral config semantics rather than client-specific presentation details.
+- `SettingsFieldSchema.required` is derived from field nullability, not from whether Pydantic has a default. This keeps generated UIs from treating required settings like `llm.model` as optional just because the SDK provides a default.
 
 ## Package-specific guidance
 When working inside a package or domain, read the closest AGENTS file.
@@ -303,8 +301,9 @@ Note: This is separate from `persistence_dir` which is used for conversation sta
 - Build agent-server: `make build-server` (output: `dist/agent-server/`)
 - Clean caches: `make clean`
 - Run SDK examples: see [openhands-sdk/openhands/sdk/AGENTS.md](openhands-sdk/openhands/sdk/AGENTS.md).
-- Programmatic settings live in `openhands-sdk/openhands/sdk/settings.py`. Treat `AgentSettings` and `AgentSettings.export_schema()` as the canonical SDK settings surface, and annotate existing SDK model fields (for example `LLM`) instead of maintaining a second, separately curated settings surface for the same values.
-
+- The example workflow runs `uv run pytest tests/examples/test_examples.py --run-examples`; each successful example must print an `EXAMPLE_COST: ...` line to stdout (use `EXAMPLE_COST: 0` for non-LLM examples).
+- Conversation plugins passed via `plugins=[...]` are lazy-loaded on the first `send_message()` or `run()`, so example code should inspect plugin-added skills or `resolved_plugins` only after that first interaction.
+- Programmatic settings live in `openhands-sdk/openhands/sdk/settings.py`. Keep the exported schema focused on neutral config structure and semantics; downstream apps should own client-specific ordering, icons, widgets, and slash-command presentation.
 </QUICK_COMMANDS>
 
 <REPO_CONFIG_NOTES>
