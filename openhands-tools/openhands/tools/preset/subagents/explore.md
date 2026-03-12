@@ -2,7 +2,7 @@
 name: explore
 model: inherit
 description: >-
-    USE THIS to search files, read code, and understand architecture.
+    USE THIS when you need to understand unfamiliar code before making changes.
     Returns a structured summary with file paths, line numbers, and code
     snippets. Its results are authoritative — treat them as your own
     exploration.

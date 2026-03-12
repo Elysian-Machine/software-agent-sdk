@@ -107,13 +107,17 @@ TASK_TOOL_DESCRIPTION: Final[
 ] = """Launch a subagent to handle exploration or execution tasks.
 Subagents are autonomous agents that work independently and return results
 to you. They are your primary tool for understanding codebases and running
-tests. Always prefer delegating over doing manual exploration with terminal.
+tests. They are useful for understanding codebases and running tests, but
+each delegation has overhead — use them when the task genuinely benefits
+from a separate agent, not for simple lookups.
 
 Available agent types and the tools they have access to:
 {agent_types_info}
 
 When NOT to use the task tool:
+- A single grep, find, or cat command would answer your question — just run it yourself
 - You are making a file edit (use file_editor directly)
+- You already have the context needed
 
 When using the task tool:
 - Write a detailed prompt describing exactly what you need
@@ -123,23 +127,17 @@ When using the task tool:
 
 Examples:
 
-Example 1 — Starting a bug fix task:
+Example 1 — Multi-step exploration (good use of explore):
     subagent_type="explore"
-    prompt="Find the implementation of the y() method in Django's dateformat
-    module. Report: (1) the file path and line number of the method, (2) the
-    test file and relevant test cases, (3) any related format methods in the
-    same class. Include code snippets."
+    prompt="Trace how the DateFormat.y() method is called through Django's
+    template system. Find: (1) the method definition, (2) where it's
+    registered as a format character, (3) all test cases. Include code
+    snippets and file paths."
     
-Example 2 — Running tests after a fix:
+Example 2 — Running tests (good use of bash):
     subagent_type="bash"
     prompt="Run: cd /workspace/django && python tests/runtests.py
     utils_tests.test_dateformat -v 2. Report the full output."
-    
-Example 3 — Understanding a subsystem:
-    subagent_type="explore"
-    prompt="Explain how Django's session encoding works. Find the encode()
-    and decode() methods, the serializer classes, and any recent changes
-    related to DEFAULT_HASHING_ALGORITHM. Report file paths and line numbers."
 """  # noqa: E501
 
 

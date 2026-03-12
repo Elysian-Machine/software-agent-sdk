@@ -153,14 +153,14 @@ def test_register_builtins_agents_cli() -> None:
     """CLI mode should register 'general purpose', 'explore', 'bash'."""
     registered = register_builtins_agents(cli_mode=True)
     registered_set = set(registered)
-    assert {"general purpose", "explore", "bash"}.issubset(registered_set)
+    assert {"general purpose (cli mode)", "explore", "bash"}.issubset(registered_set)
 
 
 def test_cli_general_purpose_no_browser() -> None:
     """CLI 'general purpose' agent must NOT include browser_tool_set."""
     register_builtins_agents(cli_mode=True)
     llm = _make_test_llm()
-    factory = get_agent_factory("general purpose")
+    factory = get_agent_factory("general purpose (cli mode)")
     agent = factory.factory_func(llm)
     assert isinstance(agent, Agent)
     tool_names = [t.name for t in agent.tools]
@@ -222,7 +222,7 @@ def test_cli_mode_skips_default_md() -> None:
     and default_cli.md should be used instead."""
     register_builtins_agents(cli_mode=True)
     llm = _make_test_llm()
-    factory = get_agent_factory("general purpose")
+    factory = get_agent_factory("general purpose (cli mode)")
     agent = factory.factory_func(llm)
     # The cli variant should NOT have browser_tool_set
     tool_names = [t.name for t in agent.tools]
