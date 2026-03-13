@@ -580,6 +580,17 @@ def _shared_registry_cache_export_enabled() -> bool:
     return False
 
 
+def _cache_to_mode() -> str:
+    raw = os.getenv("OPENHANDS_BUILDKIT_CACHE_MODE", "max").strip().lower()
+    if raw in {"max", "min", "off"}:
+        return raw
+    logger.warning(
+        "[build] Unknown OPENHANDS_BUILDKIT_CACHE_MODE=%r; defaulting to 'max'",
+        raw,
+    )
+    return "max"
+
+
 # --- single entry point ---
 
 
@@ -620,6 +631,7 @@ def build(opts: BuildOptions) -> list[str]:
     driver = _active_buildx_driver() or "unknown"
     local_cache_dir = _default_local_cache_dir()
     cache_args: list[str] = []
+    cache_to_mode = _cache_to_mode()
 
     if push:
         # Remote/CI builds: use registry cache + inline for maximum reuse.
@@ -638,18 +650,23 @@ def build(opts: BuildOptions) -> list[str]:
                 f"type=registry,ref={opts.image}:{cache_ref}",
             ]
 
-        cache_to_refs = [cache_tag]
-        if _shared_registry_cache_export_enabled():
-            cache_to_refs.append(shared_cache_tag)
+        cache_to_refs = []
+        if cache_to_mode != "off":
+            cache_to_refs.append(cache_tag)
+            if _shared_registry_cache_export_enabled():
+                cache_to_refs.append(shared_cache_tag)
 
         for cache_ref in dict.fromkeys(cache_to_refs):
             cache_args += [
                 "--cache-to",
-                f"type=registry,ref={opts.image}:{cache_ref},mode=max",
+                f"type=registry,ref={opts.image}:{cache_ref},mode={cache_to_mode}",
             ]
         logger.info(
-            "[build] Cache: registry (remote/CI), shared cache export=%s",
-            "enabled" if shared_cache_tag in cache_to_refs else "disabled",
+            "[build] Cache: registry (remote/CI), cache-to=%s, shared cache export=%s",
+            "disabled" if cache_to_mode == "off" else cache_to_mode,
+            "enabled"
+            if shared_cache_tag in cache_to_refs and cache_to_mode != "off"
+            else "disabled",
         )
     else:
         # Local/dev builds: prefer local dir cache if
@@ -659,11 +676,17 @@ def build(opts: BuildOptions) -> list[str]:
             cache_args += [
                 "--cache-from",
                 f"type=local,src={str(local_cache_dir)}",
-                "--cache-to",
-                f"type=local,dest={str(local_cache_dir)},mode=max",
             ]
+            if cache_to_mode != "off":
+                cache_args += [
+                    "--cache-to",
+                    f"type=local,dest={str(local_cache_dir)},mode={cache_to_mode}",
+                ]
             logger.info(
-                f"[build] Cache: local dir at {local_cache_dir} (driver={driver})"
+                "[build] Cache: local dir at %s (driver=%s, cache-to=%s)",
+                local_cache_dir,
+                driver,
+                "disabled" if cache_to_mode == "off" else cache_to_mode,
             )
         else:
             logger.warning(
