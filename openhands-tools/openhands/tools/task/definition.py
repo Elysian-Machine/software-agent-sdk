@@ -123,7 +123,8 @@ When using the task tool:
 - Write a detailed prompt describing exactly what you need
 - Include specific file paths, class names, or error messages from the issue
 - Tell the agent what to report back (file paths, line numbers, code snippets)
-- The agent's results are authoritative — do not re-verify them manually
+- The agent's results are authoritative — verify subagent results only when the task involves judgment or
+  interpretation.
 
 Examples:
 
@@ -139,14 +140,14 @@ Example 2 — Running tests (good use of bash):
     prompt="Run: cd /workspace/django && python tests/runtests.py
     utils_tests.test_dateformat -v 2. Report the full output."
 
-Example 3 - Research information on a website (good use of general purpose):
-    subagent_type="general purpose"
+Example 3 - Research information on a website (good use of web researcher):
+    subagent_type="web researcher"
     prompt="Navigate to the Stripe API docs and find the parameters for the PaymentIntent create endpoint."
 
 Example 4 - Perform a multi-step task involving code editing and shell commands:
-    subagent_type="general purpose (cli mode)"
-    prompt="Read the database module in src/db.py, extract the connection 
-    pooling logic into a separate file, update all imports, and run the 
+    subagent_type="general purpose"
+    prompt="Read the database module in src/db.py, extract the connection
+    pooling logic into a separate file, update all imports, and run the
     test suite to verify nothing breaks."
 """  # noqa: E501
 

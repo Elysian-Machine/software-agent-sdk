@@ -21,8 +21,18 @@ from openhands.tools.preset.default import register_builtins_agents
 SUBAGENTS_DIR: Final[Path] = Path(_preset_default.__file__).parent / "subagents"
 
 # The expected agent names as defined in the .md frontmatter.
-EXPECTED_MD_FILES: Final[set[str]] = {"default", "default_cli", "explore", "bash"}
-EXPECTED_AGENT_NAMES: Final[set[str]] = {"general purpose", "explore", "bash"}
+EXPECTED_MD_FILES: Final[set[str]] = {
+    "default",
+    "explore",
+    "bash",
+    "web_researcher",
+}
+EXPECTED_AGENT_NAMES: Final[set[str]] = {
+    "general purpose",
+    "explore",
+    "bash",
+    "web researcher",
+}
 
 
 @pytest.fixture(autouse=True)
@@ -62,7 +72,6 @@ def test_load_all_builtins() -> None:
     """Every .md file in subagents/ should parse without errors."""
     agents = load_agents_from_dir(SUBAGENTS_DIR)
     names = {a.name for a in agents}
-    # default.md and default_cli.md both define "general purpose"
     assert EXPECTED_AGENT_NAMES.issubset(names), (
         f"Missing agents: {EXPECTED_AGENT_NAMES - names}"
     )
@@ -96,38 +105,33 @@ def test_each_builtin_has_at_least_one_tool() -> None:
 
 
 # ---------------------------------------------------------------------------
-# register_builtins_agents — non-cli mode
+# register_builtins_agents — with browser enabled
 # ---------------------------------------------------------------------------
 
 
-def test_register_builtins_agents_non_cli() -> None:
-    """Non-cli mode should register 'general purpose', 'explore', 'bash'."""
-    registered = register_builtins_agents(cli_mode=False)
+def test_register_builtins_agents_with_browser() -> None:
+    """With browser enabled, all agents should be registered."""
+    registered = register_builtins_agents(enable_browser=True)
     registered_set = set(registered)
-    assert {"general purpose", "explore", "bash"}.issubset(registered_set), (
-        f"Missing registrations: "
-        f"{{'general purpose', 'explore', 'bash'}} - {registered_set}"
+    expected = {"general purpose", "explore", "bash", "web researcher"}
+    assert expected.issubset(registered_set), (
+        f"Missing registrations: {expected - registered_set}"
     )
 
 
-def test_non_cli_general_purpose_has_browser() -> None:
-    """Non-cli 'general purpose' agent must include browser_tool_set."""
-    register_builtins_agents(cli_mode=False)
+def test_general_purpose_agent_tools() -> None:
+    """'general purpose' agent should have terminal, file_editor, task_tracker."""
+    register_builtins_agents(enable_browser=True)
     llm = _make_test_llm()
     factory = get_agent_factory("general purpose")
     agent = factory.factory_func(llm)
     assert isinstance(agent, Agent)
     tool_names = [t.name for t in agent.tools]
-    assert tool_names == [
-        "terminal",
-        "file_editor",
-        "task_tracker",
-        "browser_tool_set",
-    ]
+    assert tool_names == ["terminal", "file_editor", "task_tracker"]
 
 
-def test_non_cli_explore_agent_tools() -> None:
-    register_builtins_agents(cli_mode=False)
+def test_explore_agent_tools() -> None:
+    register_builtins_agents(enable_browser=True)
     llm = _make_test_llm()
     factory = get_agent_factory("explore")
     agent = factory.factory_func(llm)
@@ -135,8 +139,8 @@ def test_non_cli_explore_agent_tools() -> None:
     assert [t.name for t in agent.tools] == ["terminal"]
 
 
-def test_non_cli_bash_agent_tools() -> None:
-    register_builtins_agents(cli_mode=False)
+def test_bash_agent_tools() -> None:
+    register_builtins_agents(enable_browser=True)
     llm = _make_test_llm()
     factory = get_agent_factory("bash")
     agent = factory.factory_func(llm)
@@ -144,28 +148,32 @@ def test_non_cli_bash_agent_tools() -> None:
     assert [t.name for t in agent.tools] == ["terminal"]
 
 
-# ---------------------------------------------------------------------------
-# register_builtins_agents — cli mode
-# ---------------------------------------------------------------------------
-
-
-def test_register_builtins_agents_cli() -> None:
-    """CLI mode should register 'general purpose', 'explore', 'bash'."""
-    registered = register_builtins_agents(cli_mode=True)
-    registered_set = set(registered)
-    assert {"general purpose (cli mode)", "explore", "bash"}.issubset(registered_set)
-
-
-def test_cli_general_purpose_no_browser() -> None:
-    """CLI 'general purpose' agent must NOT include browser_tool_set."""
-    register_builtins_agents(cli_mode=True)
+def test_web_researcher_agent_tools() -> None:
+    """'web researcher' agent must include browser_tool_set."""
+    register_builtins_agents(enable_browser=True)
     llm = _make_test_llm()
-    factory = get_agent_factory("general purpose (cli mode)")
+    factory = get_agent_factory("web researcher")
     agent = factory.factory_func(llm)
     assert isinstance(agent, Agent)
-    tool_names = [t.name for t in agent.tools]
-    assert tool_names == ["terminal", "file_editor", "task_tracker"]
-    assert "browser_tool_set" not in tool_names
+    assert [t.name for t in agent.tools] == ["browser_tool_set"]
+
+
+# ---------------------------------------------------------------------------
+# register_builtins_agents — without browser
+# ---------------------------------------------------------------------------
+
+
+def test_register_builtins_agents_no_browser() -> None:
+    """Without browser, 'general purpose', 'explore', 'bash' should register."""
+    registered = register_builtins_agents(enable_browser=False)
+    registered_set = set(registered)
+    assert {"general purpose", "explore", "bash"}.issubset(registered_set)
+
+
+def test_no_browser_excludes_web_researcher() -> None:
+    """Without browser, web researcher should not be registered."""
+    registered = register_builtins_agents(enable_browser=False)
+    assert "web researcher" not in registered
 
 
 # ---------------------------------------------------------------------------
@@ -175,8 +183,8 @@ def test_cli_general_purpose_no_browser() -> None:
 
 def test_register_builtins_agents_idempotent() -> None:
     """Calling register_builtins_agents twice should not fail or duplicate."""
-    first = register_builtins_agents(cli_mode=False)
-    second = register_builtins_agents(cli_mode=False)
+    first = register_builtins_agents(enable_browser=True)
+    second = register_builtins_agents(enable_browser=True)
     # Second call should register nothing (agents already present).
     assert len(first) > 0
     assert len(second) == 0
@@ -203,38 +211,10 @@ def test_register_builtins_does_not_overwrite_existing() -> None:
         description="custom explore",
     )
 
-    register_builtins_agents(cli_mode=False)
+    register_builtins_agents(enable_browser=True)
 
     # The factory should still be our sentinel, not the builtin one
     factory = get_agent_factory("explore")
     llm = _make_test_llm()
     factory.factory_func(llm)
     assert sentinel_called, "Builtin registration overwrote a pre-existing agent"
-
-
-# ---------------------------------------------------------------------------
-# cli_mode properly excludes default.md / default_cli.md
-# ---------------------------------------------------------------------------
-
-
-def test_cli_mode_skips_default_md() -> None:
-    """In cli_mode, default.md (with browser tools) should be skipped,
-    and default_cli.md should be used instead."""
-    register_builtins_agents(cli_mode=True)
-    llm = _make_test_llm()
-    factory = get_agent_factory("general purpose (cli mode)")
-    agent = factory.factory_func(llm)
-    # The cli variant should NOT have browser_tool_set
-    tool_names = [t.name for t in agent.tools]
-    assert "browser_tool_set" not in tool_names
-
-
-def test_non_cli_mode_skips_default_cli_md() -> None:
-    """In non-cli mode, default_cli.md should be skipped,
-    and default.md (with browser tools) should be used."""
-    register_builtins_agents(cli_mode=False)
-    llm = _make_test_llm()
-    factory = get_agent_factory("general purpose")
-    agent = factory.factory_func(llm)
-    tool_names = [t.name for t in agent.tools]
-    assert "browser_tool_set" in tool_names

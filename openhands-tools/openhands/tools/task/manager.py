@@ -142,7 +142,7 @@ class TaskManager:
     def start_task(
         self,
         prompt: str,
-        subagent_type: str = "default",
+        subagent_type: str = "general purpose",
         resume: str | None = None,
         max_turns: int | None = None,
         description: str | None = None,
@@ -335,9 +335,28 @@ class TaskManager:
         try:
             task.conversation.send_message(prompt, sender=parent_name)
             self._run_until_finished(task.id, task.conversation)
-            result = get_agent_final_response(task.conversation.state.events)
-            task.set_result(result)
-            logger.info(f"Task '{task.id}' completed.")
+
+            max_iter_detail = self._get_max_iterations_error(task.conversation)
+            if max_iter_detail is not None:
+                result = get_agent_final_response(task.conversation.state.events)
+                task.set_error(
+                    f"Sub-agent was interrupted: {max_iter_detail}\n"
+                    f"The task can be resumed with a fresh iteration budget "
+                    f'by passing resume="{task.id}".\n'
+                    f"Last response:\n{result}"
+                )
+                logger.warning(f"Task '{task.id}' hit max iterations limit.")
+            elif (
+                task.conversation.state.execution_status
+                == ConversationExecutionStatus.ERROR
+            ):
+                result = get_agent_final_response(task.conversation.state.events)
+                task.set_error(result or "Sub-agent encountered an error.")
+                logger.warning(f"Task '{task.id}' ended with error status.")
+            else:
+                result = get_agent_final_response(task.conversation.state.events)
+                task.set_result(result)
+                logger.info(f"Task '{task.id}' completed.")
         except Exception as e:
             task.set_error(str(e))
             logger.warning(f"Task {task.id} failed with error: {e}")
@@ -346,6 +365,21 @@ class TaskManager:
             self._evict_task(task)
 
         return task
+
+    def _get_max_iterations_error(self, conversation: LocalConversation) -> str | None:
+        """
+        Return the error detail if the conversation
+        hit MaxIterationsReached, else None.
+        """
+        from openhands.sdk.event.conversation_error import ConversationErrorEvent
+
+        for event in reversed(list(conversation.state.events)):
+            if (
+                isinstance(event, ConversationErrorEvent)
+                and event.code == "MaxIterationsReached"
+            ):
+                return event.detail
+        return None
 
     def _run_until_finished(
         self, task_id: str, conversation: LocalConversation

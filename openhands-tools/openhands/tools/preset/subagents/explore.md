@@ -4,8 +4,7 @@ model: inherit
 description: >-
     USE THIS when you need to understand unfamiliar code before making changes.
     Returns a structured summary with file paths, line numbers, and code
-    snippets. Its results are authoritative — treat them as your own
-    exploration.
+    snippets.
 tools:
   - terminal
 ---
