@@ -12,6 +12,7 @@ from openhands.sdk.conversation.state import (
     ConversationExecutionStatus,
     ConversationState,
 )
+from openhands.sdk.conversation.types import ConversationTags
 from openhands.sdk.hooks import HookConfig
 from openhands.sdk.llm.utils.metrics import MetricsSnapshot
 from openhands.sdk.plugin import PluginSource
@@ -133,6 +134,13 @@ class StartConversationRequest(BaseModel):
             "UserPromptSubmit, Stop, etc.). If both hook_config and plugins are "
             "provided, they are merged with explicit hooks running before plugin "
             "hooks."
+        ),
+    )
+    tags: ConversationTags = Field(
+        default_factory=dict,
+        description=(
+            "Key-value tags for the conversation. Keys must be lowercase "
+            "alphanumeric. Values are arbitrary strings up to 256 characters."
         ),
     )
     autotitle: bool = Field(
@@ -261,8 +269,19 @@ class SetSecurityAnalyzerRequest(BaseModel):
 class UpdateConversationRequest(BaseModel):
     """Payload to update conversation metadata."""
 
-    title: str = Field(
-        ..., min_length=1, max_length=200, description="New conversation title"
+    title: str | None = Field(
+        default=None,
+        min_length=1,
+        max_length=200,
+        description="New conversation title",
+    )
+    tags: ConversationTags | None = Field(
+        default=None,
+        description=(
+            "Key-value tags to set on the conversation. Keys must be lowercase "
+            "alphanumeric. Values are arbitrary strings up to 256 characters. "
+            "Replaces all existing tags when provided."
+        ),
     )
 
 

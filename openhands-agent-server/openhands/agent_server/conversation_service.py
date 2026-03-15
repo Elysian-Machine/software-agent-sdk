@@ -386,7 +386,7 @@ class ConversationService:
 
         Args:
             conversation_id: The ID of the conversation to update
-            request: Request object containing fields to update (e.g., title)
+            request: Request object containing fields to update (e.g., title, tags)
 
         Returns:
             bool: True if the conversation was updated successfully, False if not found
@@ -397,8 +397,13 @@ class ConversationService:
         if event_service is None:
             return False
 
-        # Update the title and timestamp in stored conversation
-        event_service.stored.title = request.title.strip()
+        if request.title is not None:
+            event_service.stored.title = request.title.strip()
+        if request.tags is not None:
+            event_service.stored.tags = request.tags
+            # Also update tags on the conversation state so they persist
+            state = await event_service.get_state()
+            state.tags = request.tags
         event_service.stored.updated_at = utc_now()
         # Save the updated metadata to disk
         await event_service.save_meta()
@@ -408,9 +413,14 @@ class ConversationService:
         conversation_info = _compose_conversation_info(event_service.stored, state)
         await self._notify_conversation_webhooks(conversation_info)
 
+        updated_fields = []
+        if request.title is not None:
+            updated_fields.append(f"title: {request.title}")
+        if request.tags is not None:
+            updated_fields.append(f"tags: {request.tags}")
         logger.info(
             f"Successfully updated conversation {conversation_id} "
-            f"with title: {request.title}"
+            f"with {', '.join(updated_fields)}"
         )
         return True
 

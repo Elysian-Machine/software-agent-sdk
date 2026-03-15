@@ -75,6 +75,7 @@ class Conversation:
         ) = DefaultConversationVisualizer,
         secrets: dict[str, SecretValue] | dict[str, str] | None = None,
         delete_on_close: bool = True,
+        tags: dict[str, str] | None = None,
     ) -> "LocalConversation": ...
 
     @overload
@@ -98,6 +99,7 @@ class Conversation:
         ) = DefaultConversationVisualizer,
         secrets: dict[str, SecretValue] | dict[str, str] | None = None,
         delete_on_close: bool = True,
+        tags: dict[str, str] | None = None,
     ) -> "RemoteConversation": ...
 
     def __new__(
@@ -121,6 +123,7 @@ class Conversation:
         ) = DefaultConversationVisualizer,
         secrets: dict[str, SecretValue] | dict[str, str] | None = None,
         delete_on_close: bool = True,
+        tags: dict[str, str] | None = None,
     ) -> BaseConversation:
         from openhands.sdk.conversation.impl.local_conversation import LocalConversation
         from openhands.sdk.conversation.impl.remote_conversation import (
@@ -147,6 +150,7 @@ class Conversation:
                 workspace=workspace,
                 secrets=secrets,
                 delete_on_close=delete_on_close,
+                tags=tags,
             )
 
         return LocalConversation(
@@ -164,4 +168,5 @@ class Conversation:
             persistence_dir=persistence_dir,
             secrets=secrets,
             delete_on_close=delete_on_close,
+            tags=tags,
         )
