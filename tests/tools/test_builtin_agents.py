@@ -23,14 +23,14 @@ SUBAGENTS_DIR: Final[Path] = Path(_preset_default.__file__).parent / "subagents"
 # The expected agent names as defined in the .md frontmatter.
 EXPECTED_MD_FILES: Final[set[str]] = {
     "default",
-    "explore",
-    "bash",
+    "code_explorer",
+    "bash_runner",
     "web_researcher",
 }
 EXPECTED_AGENT_NAMES: Final[set[str]] = {
     "general purpose",
-    "explore",
-    "bash",
+    "code-explorer",
+    "bash-runner",
     "web researcher",
 }
 
@@ -113,7 +113,7 @@ def test_register_builtins_agents_with_browser() -> None:
     """With browser enabled, all agents should be registered."""
     registered = register_builtins_agents(enable_browser=True)
     registered_set = set(registered)
-    expected = {"general purpose", "explore", "bash", "web researcher"}
+    expected = {"general purpose", "code-explorer", "bash-runner", "web researcher"}
     assert expected.issubset(registered_set), (
         f"Missing registrations: {expected - registered_set}"
     )
@@ -133,7 +133,7 @@ def test_general_purpose_agent_tools() -> None:
 def test_explore_agent_tools() -> None:
     register_builtins_agents(enable_browser=True)
     llm = _make_test_llm()
-    factory = get_agent_factory("explore")
+    factory = get_agent_factory("code-explorer")
     agent = factory.factory_func(llm)
     assert isinstance(agent, Agent)
     assert [t.name for t in agent.tools] == ["terminal"]
@@ -142,7 +142,7 @@ def test_explore_agent_tools() -> None:
 def test_bash_agent_tools() -> None:
     register_builtins_agents(enable_browser=True)
     llm = _make_test_llm()
-    factory = get_agent_factory("bash")
+    factory = get_agent_factory("bash-runner")
     agent = factory.factory_func(llm)
     assert isinstance(agent, Agent)
     assert [t.name for t in agent.tools] == ["terminal"]
@@ -164,10 +164,13 @@ def test_web_researcher_agent_tools() -> None:
 
 
 def test_register_builtins_agents_no_browser() -> None:
-    """Without browser, 'general purpose', 'explore', 'bash' should register."""
+    """
+    Without browser, 'general purpose', 'code-explorer',
+    'bash-runner' should register.
+    """
     registered = register_builtins_agents(enable_browser=False)
     registered_set = set(registered)
-    assert {"general purpose", "explore", "bash"}.issubset(registered_set)
+    assert {"general purpose", "code-explorer", "bash-runner"}.issubset(registered_set)
 
 
 def test_no_browser_excludes_web_researcher() -> None:
@@ -204,9 +207,9 @@ def test_register_builtins_does_not_overwrite_existing() -> None:
         sentinel_called = True
         return Agent(llm=llm, tools=[])
 
-    # Pre-register "explore" with a custom factory
+    # Pre-register "code-explorer" with a custom factory
     register_agent_if_absent(
-        name="explore",
+        name="code-explorer",
         factory_func=sentinel_factory,
         description="custom explore",
     )
@@ -214,7 +217,7 @@ def test_register_builtins_does_not_overwrite_existing() -> None:
     register_builtins_agents(enable_browser=True)
 
     # The factory should still be our sentinel, not the builtin one
-    factory = get_agent_factory("explore")
+    factory = get_agent_factory("code-explorer")
     llm = _make_test_llm()
     factory.factory_func(llm)
     assert sentinel_called, "Builtin registration overwrote a pre-existing agent"
