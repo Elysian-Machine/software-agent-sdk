@@ -128,15 +128,15 @@ When using the task tool:
 
 Examples:
 
-Example 1 — Multi-step exploration (good use of explore):
-    subagent_type="explore"
+Example 1 — Multi-step exploration (good use of code-explorer):
+    subagent_type="code-explorer"
     prompt="Trace how the DateFormat.y() method is called through Django's
     template system. Find: (1) the method definition, (2) where it's
     registered as a format character, (3) all test cases. Include code
     snippets and file paths."
     
-Example 2 — Running tests (good use of bash):
-    subagent_type="bash"
+Example 2 — Running tests (good use of bash-runner):
+    subagent_type="bash-runner"
     prompt="Run: cd /workspace/django && python tests/runtests.py
     utils_tests.test_dateformat -v 2. Report the full output."
 
