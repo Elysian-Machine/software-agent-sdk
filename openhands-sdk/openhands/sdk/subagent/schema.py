@@ -72,17 +72,40 @@ def _extract_skills(fm: dict[str, object]) -> list[str]:
     return skills
 
 
+def _resolve_env_vars(value: str) -> str:
+    """Resolve ``${VAR}`` references in *value* from ``os.environ``."""
+    import os
+
+    def _replace(m: re.Match) -> str:
+        return os.environ.get(m.group(1), m.group(0))
+
+    return re.sub(r"\$\{(\w+)\}", _replace, value)
+
+
 def _extract_mcp_servers(fm: dict[str, object]) -> dict[str, Any] | None:
-    """Extract MCP servers configuration from frontmatter."""
+    """Extract MCP servers configuration from frontmatter.
+
+    Environment variable references of the form ``${VAR}`` inside the
+    ``env`` mapping of each server are resolved from ``os.environ`` at
+    parse time so that Markdown-based definitions can forward secrets
+    without hard-coding them.
+    """
     mcp_servers_raw = fm.get("mcp_servers")
     if mcp_servers_raw is None:
         return None
-    if isinstance(mcp_servers_raw, dict):
-        return mcp_servers_raw
-    raise ValueError(
-        f"mcp_servers must be a mapping of server names to configs, "
-        f"got {type(mcp_servers_raw)}"
-    )
+    if not isinstance(mcp_servers_raw, dict):
+        raise ValueError(
+            f"mcp_servers must be a mapping of server names to configs, "
+            f"got {type(mcp_servers_raw)}"
+        )
+    # Resolve ${VAR} references in env values
+    for _server_name, server_cfg in mcp_servers_raw.items():
+        if isinstance(server_cfg, dict) and "env" in server_cfg:
+            server_cfg["env"] = {
+                k: _resolve_env_vars(v) if isinstance(v, str) else v
+                for k, v in server_cfg["env"].items()
+            }
+    return mcp_servers_raw
 
 
 def _extract_profile_store_dir(fm: dict[str, object]) -> str | None:
