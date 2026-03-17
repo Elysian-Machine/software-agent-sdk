@@ -1,12 +1,14 @@
 from __future__ import annotations
 
+from collections.abc import Callable
 from enum import Enum
 from pathlib import Path
-from typing import Any, Literal, get_args, get_origin
+from typing import TYPE_CHECKING, Any, Literal, get_args, get_origin
 
-from pydantic import BaseModel, Field, SecretStr
+from pydantic import BaseModel, Field, SecretStr, model_validator
 from pydantic.fields import FieldInfo
 
+from openhands.sdk.context.agent_context import AgentContext
 from openhands.sdk.llm import LLM
 from openhands.sdk.settings_metadata import (
     SETTINGS_METADATA_KEY,
@@ -15,6 +17,13 @@ from openhands.sdk.settings_metadata import (
     SettingsFieldMetadata,
     SettingsSectionMetadata,
 )
+from openhands.sdk.tool import Tool
+
+
+if TYPE_CHECKING:
+    from openhands.sdk.agent import Agent
+    from openhands.sdk.context.condenser import LLMSummarizingCondenser
+    from openhands.sdk.critic.base import CriticBase
 
 
 SettingsValueType = Literal[
@@ -200,7 +209,29 @@ def _default_llm_settings() -> LLM:
     return LLM(model=model)
 
 
+# ---------------------------------------------------------------------------
+# Schema versioning
+# ---------------------------------------------------------------------------
+# Bump CURRENT_SCHEMA_VERSION whenever a breaking change is made to
+# AgentSettings serialization (field renames, restructured nesting, etc.).
+# Adding a new field with a default does NOT require a bump.
+#
+# For each bump, add a migration function to _SCHEMA_MIGRATIONS that
+# transforms a raw dict from version N to N+1.
+
+CURRENT_SCHEMA_VERSION = 1
+
+_SCHEMA_MIGRATIONS: dict[int, Callable[[dict[str, Any]], dict[str, Any]]] = {
+    # Example for a future v1 → v2 migration:
+    # 1: _migrate_v1_to_v2,
+}
+
+
 class AgentSettings(BaseModel):
+    schema_version: int = Field(
+        default=CURRENT_SCHEMA_VERSION,
+        description="Schema version for backward-compatible deserialization.",
+    )
     agent: str = Field(
         default="CodeActAgent",
         description="Agent class to use.",
@@ -220,6 +251,14 @@ class AgentSettings(BaseModel):
                 label="LLM",
             ).model_dump()
         },
+    )
+    tools: list[Tool] = Field(
+        default_factory=list,
+        description="Tools available to the agent.",
+    )
+    agent_context: AgentContext = Field(
+        default_factory=AgentContext,
+        description="Context for the agent (skills, secrets, message suffixes).",
     )
     condenser: CondenserSettings = Field(
         default_factory=CondenserSettings,
@@ -242,6 +281,21 @@ class AgentSettings(BaseModel):
         },
     )
 
+    @model_validator(mode="before")
+    @classmethod
+    def _migrate_schema(cls, data: Any) -> Any:
+        """Run sequential migrations to bring old data up to current."""
+        if not isinstance(data, dict):
+            return data
+        v = data.get("schema_version", 1)
+        while v < CURRENT_SCHEMA_VERSION:
+            migrate = _SCHEMA_MIGRATIONS.get(v)
+            if migrate is None:
+                raise ValueError(f"No migration from schema version {v} to {v + 1}")
+            data = migrate(data)
+            v = data.get("schema_version", v + 1)
+        return data
+
     # Backward-compatible accessors.
     @property
     def critic(self) -> VerificationSettings:
@@ -254,6 +308,65 @@ class AgentSettings(BaseModel):
     @classmethod
     def export_schema(cls) -> SettingsSchema:
         return export_settings_schema(cls)
+
+    def create_agent(self) -> Agent:
+        """Build an :class:`Agent` purely from these settings.
+
+        Example::
+
+            settings = AgentSettings(
+                llm=LLM(model="m", api_key="k"),
+                tools=[Tool(name="TerminalTool")],
+            )
+            agent = settings.create_agent()
+        """
+        from openhands.sdk.agent import Agent
+
+        return Agent(
+            llm=self.llm,
+            tools=self.tools,
+            agent_context=self.agent_context,
+            condenser=self.build_condenser(self.llm),
+            critic=self.build_critic(),
+        )
+
+    def build_condenser(self, llm: LLM) -> LLMSummarizingCondenser | None:
+        """Create a condenser from these settings, or ``None`` if disabled."""
+        if not self.condenser.enabled:
+            return None
+
+        from openhands.sdk.context.condenser import LLMSummarizingCondenser
+
+        return LLMSummarizingCondenser(llm=llm, max_size=self.condenser.max_size)
+
+    def build_critic(self) -> CriticBase | None:
+        """Create an :class:`APIBasedCritic` from these settings.
+
+        Returns ``None`` when the critic is disabled or when the LLM
+        has no ``api_key`` (the critic service requires authentication).
+        """
+        if not self.verification.critic_enabled:
+            return None
+
+        api_key = self.llm.api_key
+        if api_key is None:
+            return None
+
+        from openhands.sdk.critic.base import IterativeRefinementConfig
+        from openhands.sdk.critic.impl.api import APIBasedCritic
+
+        iterative_refinement = None
+        if self.verification.enable_iterative_refinement:
+            iterative_refinement = IterativeRefinementConfig(
+                success_threshold=self.verification.critic_threshold,
+                max_iterations=self.verification.max_refinement_iterations,
+            )
+
+        return APIBasedCritic(
+            api_key=api_key,
+            mode=self.verification.critic_mode,
+            iterative_refinement=iterative_refinement,
+        )
 
 
 def settings_section_metadata(field: FieldInfo) -> SettingsSectionMetadata | None:
@@ -296,8 +409,8 @@ def export_settings_schema(model: type[BaseModel]) -> SettingsSchema:
                 continue
 
             section_default = field.get_default(call_default_factory=True)
-            section_label = (
-                section_metadata.label or _humanize_name(section_metadata.key)
+            section_label = section_metadata.label or _humanize_name(
+                section_metadata.key
             )
             section = SettingsSectionSchema(
                 key=section_metadata.key,
