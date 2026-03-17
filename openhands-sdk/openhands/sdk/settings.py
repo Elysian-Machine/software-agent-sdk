@@ -272,6 +272,10 @@ class AgentSettings(BaseModel):
         default_factory=list,
         description="Tools available to the agent.",
     )
+    mcp_config: dict[str, Any] = Field(
+        default_factory=dict,
+        description="MCP server configuration for the agent.",
+    )
     agent_context: AgentContext = Field(
         default_factory=AgentContext,
         description="Context for the agent (skills, secrets, message suffixes).",
@@ -341,6 +345,7 @@ class AgentSettings(BaseModel):
         return Agent(
             llm=self.llm,
             tools=self.tools,
+            mcp_config=self.mcp_config,
             agent_context=self.agent_context,
             condenser=self.build_condenser(self.llm),
             critic=self.build_critic(),
