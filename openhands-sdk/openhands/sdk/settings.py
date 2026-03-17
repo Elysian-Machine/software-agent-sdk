@@ -160,6 +160,22 @@ class VerificationSettings(BaseModel):
         },
     )
 
+    # -- Critic deployment --
+    critic_server_url: str | None = Field(
+        default=None,
+        description=(
+            "Override the critic service URL. "
+            "When None, the APIBasedCritic default is used."
+        ),
+    )
+    critic_model_name: str | None = Field(
+        default=None,
+        description=(
+            "Override the critic model name. "
+            "When None, the APIBasedCritic default is used."
+        ),
+    )
+
     # -- Security --
     confirmation_mode: bool = Field(
         default=False,
@@ -344,6 +360,11 @@ class AgentSettings(BaseModel):
 
         Returns ``None`` when the critic is disabled or when the LLM
         has no ``api_key`` (the critic service requires authentication).
+
+        If ``verification.critic_server_url`` or
+        ``verification.critic_model_name`` are set they override the
+        ``APIBasedCritic`` defaults, allowing deployments to route
+        through a custom endpoint (e.g. an LLM proxy).
         """
         if not self.verification.critic_enabled:
             return None
@@ -362,10 +383,17 @@ class AgentSettings(BaseModel):
                 max_iterations=self.verification.max_refinement_iterations,
             )
 
+        overrides: dict[str, Any] = {}
+        if self.verification.critic_server_url is not None:
+            overrides["server_url"] = self.verification.critic_server_url
+        if self.verification.critic_model_name is not None:
+            overrides["model_name"] = self.verification.critic_model_name
+
         return APIBasedCritic(
             api_key=api_key,
             mode=self.verification.critic_mode,
             iterative_refinement=iterative_refinement,
+            **overrides,
         )
 
 

@@ -187,6 +187,21 @@ def test_create_agent_critic_with_iterative_refinement() -> None:
     assert ir.max_iterations == 5
 
 
+def test_create_agent_critic_with_server_url_override() -> None:
+    settings = AgentSettings(
+        llm=LLM(model="m", api_key=SecretStr("k")),
+        verification=VerificationSettings(
+            critic_enabled=True,
+            critic_server_url="https://proxy.example.com/vllm",
+            critic_model_name="my-critic",
+        ),
+    )
+    agent = settings.create_agent()
+    assert isinstance(agent.critic, APIBasedCritic)
+    assert agent.critic.server_url == "https://proxy.example.com/vllm"
+    assert agent.critic.model_name == "my-critic"
+
+
 # ---------------------------------------------------------------------------
 # Schema versioning
 # ---------------------------------------------------------------------------
