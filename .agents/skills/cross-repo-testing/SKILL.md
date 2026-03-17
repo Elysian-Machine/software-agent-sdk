@@ -164,7 +164,7 @@ curl -s -o /dev/null -w "%{http_code}" https://ohpr-<PR>-<random>.staging.all-ha
 
 ## Running E2E Tests Against Staging
 
-**Critical: Feature deployments have their own Keycloak instance.** API keys from `app.all-hands.dev` or `$OPENHANDS_API_KEY` will NOT work. You need a test API key for the specific feature deployment. The user must provide one, or you log in via the feature deployment's browser UI.
+**Critical: Feature deployments have their own Keycloak instance.** API keys from `app.all-hands.dev` or `$OPENHANDS_API_KEY` will NOT work. You need a test API key for the specific feature deployment. The user must provide one.
 
 ```python
 from openhands.workspace import OpenHandsCloudWorkspace
