@@ -88,8 +88,11 @@ class CondenserSettings(BaseModel):
     )
 
 
-class CriticSettings(BaseModel):
-    enabled: bool = Field(
+class VerificationSettings(BaseModel):
+    """Combined critic and security settings."""
+
+    # -- Critic --
+    critic_enabled: bool = Field(
         default=False,
         description="Enable critic evaluation for the agent.",
         json_schema_extra={
@@ -99,13 +102,14 @@ class CriticSettings(BaseModel):
             ).model_dump()
         },
     )
-    mode: CriticMode = Field(
+    critic_mode: CriticMode = Field(
         default="finish_and_message",
         description="When critic evaluation should run.",
         json_schema_extra={
             SETTINGS_METADATA_KEY: SettingsFieldMetadata(
+                label="Critic mode",
                 prominence=SettingProminence.MINOR,
-                depends_on=("enabled",),
+                depends_on=("critic_enabled",),
             ).model_dump()
         },
     )
@@ -117,19 +121,20 @@ class CriticSettings(BaseModel):
         json_schema_extra={
             SETTINGS_METADATA_KEY: SettingsFieldMetadata(
                 label="Enable iterative refinement",
-                depends_on=("enabled",),
+                depends_on=("critic_enabled",),
             ).model_dump()
         },
     )
-    threshold: float = Field(
+    critic_threshold: float = Field(
         default=0.6,
         ge=0.0,
         le=1.0,
         description="Critic success threshold used for iterative refinement.",
         json_schema_extra={
             SETTINGS_METADATA_KEY: SettingsFieldMetadata(
+                label="Critic threshold",
                 prominence=SettingProminence.MINOR,
-                depends_on=("enabled", "enable_iterative_refinement"),
+                depends_on=("critic_enabled", "enable_iterative_refinement"),
             ).model_dump()
         },
     )
@@ -141,13 +146,12 @@ class CriticSettings(BaseModel):
             SETTINGS_METADATA_KEY: SettingsFieldMetadata(
                 label="Max refinement iterations",
                 prominence=SettingProminence.MINOR,
-                depends_on=("enabled", "enable_iterative_refinement"),
+                depends_on=("critic_enabled", "enable_iterative_refinement"),
             ).model_dump()
         },
     )
 
-
-class SecuritySettings(BaseModel):
+    # -- Security --
     confirmation_mode: bool = Field(
         default=False,
         description="Require user confirmation before executing risky actions.",
@@ -169,6 +173,25 @@ class SecuritySettings(BaseModel):
             ).model_dump()
         },
     )
+
+    # Backward-compatible accessors so ``settings.verification.enabled``
+    # etc. keep working for code that used the old CriticSettings shape.
+    @property
+    def enabled(self) -> bool:
+        return self.critic_enabled
+
+    @property
+    def mode(self) -> CriticMode:
+        return self.critic_mode
+
+    @property
+    def threshold(self) -> float:
+        return self.critic_threshold
+
+
+# Keep old names importable for backward compatibility.
+CriticSettings = VerificationSettings
+SecuritySettings = VerificationSettings
 
 
 def _default_llm_settings() -> LLM:
@@ -208,26 +231,25 @@ class AgentSettings(BaseModel):
             ).model_dump()
         },
     )
-    critic: CriticSettings = Field(
-        default_factory=CriticSettings,
-        description="Critic settings for the agent.",
+    verification: VerificationSettings = Field(
+        default_factory=VerificationSettings,
+        description="Verification settings (critic + security) for the agent.",
         json_schema_extra={
             SETTINGS_SECTION_METADATA_KEY: SettingsSectionMetadata(
-                key="critic",
-                label="Critic",
+                key="verification",
+                label="Verification",
             ).model_dump()
         },
     )
-    security: SecuritySettings = Field(
-        default_factory=SecuritySettings,
-        description="Security settings for the agent.",
-        json_schema_extra={
-            SETTINGS_SECTION_METADATA_KEY: SettingsSectionMetadata(
-                key="security",
-                label="Security",
-            ).model_dump()
-        },
-    )
+
+    # Backward-compatible accessors.
+    @property
+    def critic(self) -> VerificationSettings:
+        return self.verification
+
+    @property
+    def security(self) -> VerificationSettings:
+        return self.verification
 
     @classmethod
     def export_schema(cls) -> SettingsSchema:
