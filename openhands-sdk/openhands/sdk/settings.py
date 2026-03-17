@@ -167,6 +167,13 @@ class VerificationSettings(BaseModel):
             "Override the critic service URL. "
             "When None, the APIBasedCritic default is used."
         ),
+        json_schema_extra={
+            SETTINGS_METADATA_KEY: SettingsFieldMetadata(
+                label="Critic server URL",
+                prominence=SettingProminence.MINOR,
+                depends_on=("critic_enabled",),
+            ).model_dump()
+        },
     )
     critic_model_name: str | None = Field(
         default=None,
@@ -174,6 +181,13 @@ class VerificationSettings(BaseModel):
             "Override the critic model name. "
             "When None, the APIBasedCritic default is used."
         ),
+        json_schema_extra={
+            SETTINGS_METADATA_KEY: SettingsFieldMetadata(
+                label="Critic model name",
+                prominence=SettingProminence.MINOR,
+                depends_on=("critic_enabled",),
+            ).model_dump()
+        },
     )
 
     # -- Security --
@@ -275,6 +289,12 @@ class AgentSettings(BaseModel):
     mcp_config: dict[str, Any] = Field(
         default_factory=dict,
         description="MCP server configuration for the agent.",
+        json_schema_extra={
+            SETTINGS_METADATA_KEY: SettingsFieldMetadata(
+                label="MCP configuration",
+                prominence=SettingProminence.MINOR,
+            ).model_dump()
+        },
     )
     agent_context: AgentContext = Field(
         default_factory=AgentContext,
