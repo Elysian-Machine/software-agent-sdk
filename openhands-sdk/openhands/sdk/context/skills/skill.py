@@ -29,6 +29,7 @@ from openhands.sdk.context.skills.utils import (
     validate_skill_name,
 )
 from openhands.sdk.logger import get_logger
+from openhands.sdk.utils import DEFAULT_TRUNCATE_NOTICE, maybe_truncate
 
 
 logger = get_logger(__name__)
@@ -160,12 +161,15 @@ class Skill(BaseModel):
         ),
     )
 
+    MAX_DESCRIPTION_LENGTH: ClassVar[int] = 1024
+
     # AgentSkills standard fields (https://agentskills.io/specification)
     description: str | None = Field(
         default=None,
         description=(
             "A brief description of what the skill does and when to use it. "
-            "AgentSkills standard field (max 1024 characters)."
+            "Descriptions exceeding MAX_DESCRIPTION_LENGTH are truncated "
+            "with a notice pointing to the skill's source path."
         ),
     )
     license: str | None = Field(
@@ -204,15 +208,11 @@ class Skill(BaseModel):
         ),
     )
 
-    @field_validator("description")
-    @classmethod
-    def _validate_description_length(cls, v: str | None) -> str | None:
-        """Validate description length per AgentSkills spec (max 1024 chars)."""
-        if v is not None and len(v) > 1024:
-            raise SkillValidationError(
-                f"Description exceeds 1024 characters ({len(v)} chars)"
-            )
-        return v
+    _DESCRIPTION_TRUNCATE_NOTICE = (
+        "<response clipped><NOTE>Due to the max output limit, only part of "
+        "the full description is shown. You can view the complete skill "
+        "content at {source}.</NOTE>"
+    )
 
     @field_validator("allowed_tools", mode="before")
     @classmethod
@@ -495,6 +495,34 @@ class Skill(BaseModel):
             )
 
         return None
+
+    @model_validator(mode="after")
+    def _truncate_long_description(self):
+        """Truncate description to MAX_DESCRIPTION_LENGTH via maybe_truncate.
+
+        Uses a model_validator (not field_validator) so the truncation notice
+        can reference self.source, telling the agent where to find the full
+        skill content.
+        """
+        if (
+            self.description is not None
+            and len(self.description) > self.MAX_DESCRIPTION_LENGTH
+        ):
+            logger.warning(
+                "Skill '%s' description truncated from %d to %d characters",
+                self.name,
+                len(self.description),
+                self.MAX_DESCRIPTION_LENGTH,
+            )
+            notice = DEFAULT_TRUNCATE_NOTICE
+            if self.source:
+                notice = self._DESCRIPTION_TRUNCATE_NOTICE.format(source=self.source)
+            self.description = maybe_truncate(
+                self.description,
+                truncate_after=self.MAX_DESCRIPTION_LENGTH,
+                truncate_notice=notice,
+            )
+        return self
 
     @model_validator(mode="after")
     def _append_missing_variables_prompt(self):
@@ -897,6 +925,7 @@ def load_marketplace_skill_names(
 def load_public_skills(
     repo_url: str = PUBLIC_SKILLS_REPO,
     branch: str = PUBLIC_SKILLS_BRANCH,
+    marketplace_path: str | None = DEFAULT_MARKETPLACE_PATH,
 ) -> list[Skill]:
     """Load skills from the public OpenHands skills repository.
 
@@ -906,9 +935,10 @@ def load_public_skills(
     to keep the skills up-to-date. This approach is more efficient than fetching
     individual files via HTTP.
 
-    Only skills listed in the default marketplace (marketplaces/default.json) are
-    loaded. This allows the OpenHands extensions repository to contain additional
-    skills that are not included by default.
+    By default, only skills listed in the default marketplace
+    (marketplaces/default.json) are loaded. Pass a different relative
+    marketplace_path to load another marketplace, or None to load all public
+    skills without marketplace filtering.
 
     Note: When a skill directory contains a SKILL.md file (AgentSkills format),
     any other markdown files in that directory or its subdirectories are treated
@@ -918,6 +948,8 @@ def load_public_skills(
         repo_url: URL of the skills repository. Defaults to the official
             OpenHands skills repository.
         branch: Branch name to load skills from. Defaults to 'main'.
+        marketplace_path: Relative path to the marketplace JSON file within the
+            repository. Pass None to load all public skills without filtering.
 
     Returns:
         List of Skill objects loaded from the public repository.
@@ -950,34 +982,42 @@ def load_public_skills(
             logger.warning(f"Skills directory not found in repository: {skills_dir}")
             return all_skills
 
-        # Load the default marketplace to determine which skills to include
-        marketplace_skill_names = load_marketplace_skill_names(
-            repo_path, DEFAULT_MARKETPLACE_PATH
-        )
-
         # Determine which skill files to load
+        if marketplace_path is None:
+            marketplace_skill_names = None
+        else:
+            marketplace_skill_names = load_marketplace_skill_names(
+                repo_path, marketplace_path
+            )
+            if (
+                marketplace_skill_names is None
+                and marketplace_path != DEFAULT_MARKETPLACE_PATH
+            ):
+                logger.warning(
+                    "Configured marketplace path could not be loaded: %s",
+                    marketplace_path,
+                )
+                return all_skills
+
         if marketplace_skill_names is not None:
-            # Marketplace exists: only load skills listed in marketplace
             all_skill_files: list[Path] = []
             for skill_name in marketplace_skill_names:
-                # Check for AgentSkills format (directory with SKILL.md)
                 skill_md = skills_dir / skill_name / "SKILL.md"
                 if skill_md.exists():
                     all_skill_files.append(skill_md)
                     continue
-                # Check for legacy format (skill_name.md file)
+
                 legacy_md = skills_dir / f"{skill_name}.md"
                 if legacy_md.exists():
                     all_skill_files.append(legacy_md)
                     continue
+
                 logger.debug(
-                    f"Skill '{skill_name}' from marketplace not found in skills dir"
+                    "Skill '%s' from marketplace '%s' not found in skills dir",
+                    skill_name,
+                    marketplace_path,
                 )
         else:
-            # No marketplace: load all skills (backward compatible)
-            # Find SKILL.md directories (AgentSkills format) and regular .md files
-            # This ensures that markdown files in SKILL.md directories are NOT
-            # loaded as separate skills - they are reference materials.
             skill_md_files = find_skill_md_directories(skills_dir)
             skill_md_dirs = {skill_md.parent for skill_md in skill_md_files}
             regular_md_files = find_regular_md_files(skills_dir, skill_md_dirs)
@@ -1017,6 +1057,7 @@ def load_available_skills(
     include_user: bool = False,
     include_project: bool = False,
     include_public: bool = False,
+    marketplace_path: str | None = DEFAULT_MARKETPLACE_PATH,
 ) -> dict[str, Skill]:
     """Load and merge skills from SDK-level sources with consistent precedence.
 
@@ -1033,6 +1074,8 @@ def load_available_skills(
         include_user: Load user-level skills (~/.agents/skills, etc.).
         include_project: Load project-level skills (requires *work_dir*).
         include_public: Load public skills from the OpenHands extensions repo.
+        marketplace_path: Relative marketplace JSON path to use for public skills.
+            Pass None to load all public skills without marketplace filtering.
 
     Returns:
         Dict mapping skill name → Skill, with higher-precedence sources
@@ -1042,7 +1085,7 @@ def load_available_skills(
 
     if include_public:
         try:
-            for s in load_public_skills():
+            for s in load_public_skills(marketplace_path=marketplace_path):
                 available[s.name] = s
         except Exception as e:
             logger.warning(f"Failed to load public skills: {e}")
