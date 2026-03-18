@@ -1,0 +1,15 @@
+{
+  "name": "experimental",
+  "owner": {
+    "name": "R&D Team"
+  },
+  "description": "Experimental plugins - use at your own risk",
+  "plugins": [
+    {
+      "name": "beta-tool",
+      "source": "./plugins/beta-tool",
+      "description": "Experimental AI-assisted refactoring"
+    }
+  ],
+  "skills": []
+}
