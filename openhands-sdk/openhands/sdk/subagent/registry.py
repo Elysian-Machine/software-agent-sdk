@@ -385,16 +385,14 @@ def get_factory_info() -> str:
     if not user_factories:
         return "- No user-registered agents yet. Call register_agent(...) to add custom agents."  # noqa: E501
 
-    info_lines = []
-    for name, factory in sorted(user_factories.items()):
+    def get_agent_info(name, factory):
         defn = factory.definition
-        line = f"- **{name}**: {defn.description}"
-        if defn.tools:
-            tools_str = ", ".join(defn.tools)
-            line += f" (tools: {tools_str})"
-        info_lines.append(line)
+        tools = f" (tools: {', '.join(defn.tools)})" if defn.tools else ""
+        return f"- **{name}**: {defn.description}{tools}"
 
-    return "\n".join(info_lines)
+    return "\n".join(
+        get_agent_info(name, f) for name, f in sorted(user_factories.items())
+    )
 
 
 def get_registered_agent_definitions() -> list[AgentDefinition]:
