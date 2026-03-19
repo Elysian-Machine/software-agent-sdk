@@ -104,9 +104,7 @@ def _validate_repo_path(v: str | None) -> str | None:
     try:
         normalized_path.relative_to(dummy_root)
     except ValueError:
-        raise ValueError(
-            f"repo_path '{v}' escapes repository root after normalization"
-        )
+        raise ValueError(f"repo_path '{v}' escapes repository root after normalization")
 
     return v
 
