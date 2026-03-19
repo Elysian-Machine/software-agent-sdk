@@ -59,7 +59,8 @@ class PluginNotFoundError(PluginResolutionError):
             )
             msg = (
                 f"Plugin '{plugin_name}' not found. "
-                f"All {len(fetch_errors)} marketplace(s) failed to fetch: {error_details}"
+                f"All {len(fetch_errors)} marketplace(s) failed to fetch: "
+                f"{error_details}"
             )
         else:
             msg = f"Plugin '{plugin_name}' not found in any registered marketplace"
