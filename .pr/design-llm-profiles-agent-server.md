@@ -78,7 +78,8 @@ that switch is already persisted to `base_state.json`.
 
 One limitation today: `LocalConversation` constructs `LLMProfileStore()` with the
 default directory. Agent-server will need a small additive way to point
-`LocalConversation` at the server-configured profile store path.
+`LocalConversation` at the server-configured profile store path when
+`OH_LLM_PROFILES_PATH` is overridden.
 
 #### 3. Restore-time flexibility already matches issue #1451
 
@@ -155,20 +156,27 @@ before constructing `LocalConversation`**.
 Add agent-server config:
 
 - `OH_LLM_PROFILES_PATH`
-- default: `workspace/llm_profiles`
+- default: `Path.home() / ".openhands" / "profiles"` (the existing SDK default)
 
-Why a server-specific path instead of relying on `~/.openhands/profiles`?
+Why keep the same home-scoped default for server too?
 
-- it keeps server data in one predictable place
-- it matches how conversations are already explicitly configured
-- it behaves better in containers and ephemeral runtimes
+- it matches the existing `LLMProfileStore` behavior instead of introducing
+  server-only path semantics
+- it stays consistent with other per-user SDK data already stored under
+  `~/.openhands/`
+- putting profiles under `workspace/` does **not** meaningfully improve security in
+  the current same-UID sandbox model, so a separate `workspace/llm_profiles`
+  default would add divergence without real isolation
+- deployments that want an explicit location can still override it via
+  `OH_LLM_PROFILES_PATH`
 
 I would also add an additive SDK knob such as:
 
 - `LocalConversation(..., profile_store_dir: str | Path | None = None)`
 
-so the existing `switch_profile()` implementation can keep working while using
-the server-configured profile store instead of the SDK default.
+so the existing `switch_profile()` implementation can keep working while letting
+agent-server pass `OH_LLM_PROFILES_PATH` when it wants a non-default profile
+store location.
 
 ### 2. Make `LLMProfileStore` cipher-aware
 
