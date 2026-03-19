@@ -291,7 +291,7 @@ class StuckDetector:
         msg = event.llm_message
         return bool(
             msg.reasoning_content is not None
-            or (msg.thinking_blocks and len(msg.thinking_blocks) > 0)
+            or msg.thinking_blocks
             or msg.responses_reasoning_item is not None
         )
 
