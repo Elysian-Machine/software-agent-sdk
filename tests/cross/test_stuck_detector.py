@@ -604,3 +604,67 @@ def test_reset_after_user_message():
 
     # Still not stuck with just one action after user message
     assert stuck_detector.is_stuck() is False
+
+
+def test_reasoning_only_monologue_triggers_nudge():
+    """Test that reasoning-only messages trigger nudge, not stuck."""
+    llm = LLM(model="gpt-4o-mini", usage_id="test-llm")
+    agent = Agent(llm=llm)
+    state = ConversationState.create(
+        id=uuid.uuid4(), agent=agent, workspace=LocalWorkspace(working_dir="/tmp")
+    )
+    stuck_detector = StuckDetector(state)
+
+    # Add a user message first
+    user_message = MessageEvent(
+        source="user",
+        llm_message=Message(role="user", content=[TextContent(text="Hello")]),
+    )
+    state.events.append(user_message)
+
+    # Add 3 consecutive reasoning-only agent messages (no content, has reasoning)
+    for i in range(3):
+        agent_message = MessageEvent(
+            source="agent",
+            llm_message=Message(
+                role="assistant",
+                content=[],  # No content
+                reasoning_content=f"Thinking step {i}...",  # Has reasoning
+            ),
+        )
+        state.events.append(agent_message)
+
+    # Should NOT be stuck (reasoning-only messages)
+    assert stuck_detector.is_stuck() is False
+    # Should need a nudge
+    assert stuck_detector.needs_reasoning_nudge() is True
+
+
+def test_empty_monologue_triggers_stuck_not_nudge():
+    """Test that truly empty messages trigger stuck, not nudge."""
+    llm = LLM(model="gpt-4o-mini", usage_id="test-llm")
+    agent = Agent(llm=llm)
+    state = ConversationState.create(
+        id=uuid.uuid4(), agent=agent, workspace=LocalWorkspace(working_dir="/tmp")
+    )
+    stuck_detector = StuckDetector(state)
+
+    # Add a user message first
+    user_message = MessageEvent(
+        source="user",
+        llm_message=Message(role="user", content=[TextContent(text="Hello")]),
+    )
+    state.events.append(user_message)
+
+    # Add 3 consecutive truly empty agent messages (no content, no reasoning)
+    for _ in range(3):
+        agent_message = MessageEvent(
+            source="agent",
+            llm_message=Message(role="assistant", content=[]),
+        )
+        state.events.append(agent_message)
+
+    # Should be stuck (truly empty messages)
+    assert stuck_detector.is_stuck() is True
+    # Should NOT need a nudge
+    assert stuck_detector.needs_reasoning_nudge() is False

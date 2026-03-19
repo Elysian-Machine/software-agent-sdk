@@ -9,6 +9,7 @@ from openhands.sdk.event import (
     ObservationBaseEvent,
     ObservationEvent,
 )
+from openhands.sdk.llm import TextContent
 from openhands.sdk.logger import get_logger
 
 
@@ -198,31 +199,96 @@ class StuckDetector:
         return False
 
     def _is_stuck_monologue(self, events: list[Event]) -> bool:
-        # scenario 3: monologue
-        # check for repeated MessageActions with source=AGENT
-        # see if the agent is engaged in a good old monologue, telling
-        # itself the same thing over and over
+        """Detect monologue of agent messages that are NOT reasoning-only.
+
+        This covers:
+        - Truly empty messages (no content, no reasoning) - Row 8
+        - Messages with content (shouldn't accumulate, but handle edge cases)
+
+        Reasoning-only messages are handled by needs_reasoning_nudge().
+        """
         threshold = self.monologue_threshold
         if len(events) < threshold:
             return False
 
-        # Look for N consecutive agent messages without user interruption
-        agent_message_count = 0
-
+        message_count = 0
         for event in reversed(events):
             if isinstance(event, MessageEvent):
                 if event.source == "agent":
-                    agent_message_count += 1
+                    has_content = self._message_has_content(event)
+                    has_reasoning = self._message_has_reasoning(event)
+                    # Skip reasoning-only messages (handled by needs_reasoning_nudge)
+                    if has_reasoning and not has_content:
+                        break
+                    message_count += 1
                 elif event.source == "user":
-                    break  # User interrupted, not a monologue
+                    break
             elif isinstance(event, CondensationSummaryEvent):
-                # Condensation events don't break the monologue pattern
                 continue
             else:
-                # Other events (actions/observations) don't count as monologue
                 break
 
-        return agent_message_count >= threshold
+        return message_count >= threshold
+
+    def needs_reasoning_nudge(self) -> bool:
+        """Check if agent has consecutive reasoning-only responses needing a nudge.
+
+        Returns True if we should inject a nudge prompt to guide the LLM.
+        """
+        events = list(self.state.events[-MAX_EVENTS_TO_SCAN_FOR_STUCK_DETECTION:])
+
+        last_user_msg_index = next(
+            (
+                i
+                for i in reversed(range(len(events)))
+                if isinstance(events[i], MessageEvent) and events[i].source == "user"
+            ),
+            -1,
+        )
+        if last_user_msg_index != -1:
+            events = events[last_user_msg_index + 1 :]
+
+        if len(events) < self.monologue_threshold:
+            return False
+
+        reasoning_only_count = 0
+        for event in reversed(events):
+            if isinstance(event, MessageEvent):
+                if event.source == "agent":
+                    has_content = self._message_has_content(event)
+                    has_reasoning = self._message_has_reasoning(event)
+                    if has_reasoning and not has_content:
+                        reasoning_only_count += 1
+                    else:
+                        break
+                elif event.source == "user":
+                    break
+            elif isinstance(event, CondensationSummaryEvent):
+                continue
+            else:
+                break
+
+        return reasoning_only_count >= self.monologue_threshold
+
+    def _message_has_content(self, event: MessageEvent) -> bool:
+        """Check if a MessageEvent has actual text content."""
+        if event.llm_message is None:
+            return False
+        return any(
+            isinstance(c, TextContent) and c.text.strip()
+            for c in event.llm_message.content
+        )
+
+    def _message_has_reasoning(self, event: MessageEvent) -> bool:
+        """Check if a MessageEvent has reasoning content."""
+        if event.llm_message is None:
+            return False
+        msg = event.llm_message
+        return bool(
+            msg.reasoning_content is not None
+            or (msg.thinking_blocks and len(msg.thinking_blocks) > 0)
+            or msg.responses_reasoning_item is not None
+        )
 
     def _is_stuck_alternating_action_observation(self, events: list[Event]) -> bool:
         # scenario 4: alternating action-observation loop

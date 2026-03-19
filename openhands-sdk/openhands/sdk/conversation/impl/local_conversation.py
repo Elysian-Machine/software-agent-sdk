@@ -635,9 +635,34 @@ class LocalConversation(BaseConversation):
 
                     # Check for stuck patterns if enabled
                     if self._stuck_detector:
-                        is_stuck = self._stuck_detector.is_stuck()
+                        # Check for reasoning-only monologue first (Row 7)
+                        # Inject a nudge to guide the LLM to provide a final answer
+                        if self._stuck_detector.needs_reasoning_nudge():
+                            logger.info(
+                                "Reasoning-only monologue detected - "
+                                "injecting nudge to guide LLM"
+                            )
+                            nudge = MessageEvent(
+                                source="user",
+                                llm_message=Message(
+                                    role="user",
+                                    content=[
+                                        TextContent(
+                                            text=(
+                                                "Please provide your final answer now "
+                                                "using the appropriate tool. If you "
+                                                "have a text answer, use the finish "
+                                                "tool to submit it."
+                                            )
+                                        )
+                                    ],
+                                ),
+                            )
+                            self._on_event(nudge)
+                            continue
 
-                        if is_stuck:
+                        # Check for truly stuck scenarios (Row 8, action loops, etc.)
+                        if self._stuck_detector.is_stuck():
                             logger.warning("Stuck pattern detected.")
                             self._state.execution_status = (
                                 ConversationExecutionStatus.STUCK
