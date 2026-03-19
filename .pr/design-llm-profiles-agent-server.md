@@ -105,6 +105,21 @@ That means we already have the important #1451 property for LLMs:
 - the request is serialized into `StoredConversation`
 - `StoredConversation` is persisted in `meta.json`
 
+The start-related model inheritance today is:
+
+```text
+_StartConversationRequestBase
+├── StartConversationRequest      # public /api/conversations contract
+└── StartACPConversationRequest   # public /api/acp/conversations contract
+    └── StoredConversation        # persisted meta.json model
+```
+
+The confusing part is that `StoredConversation` is **not** semantically
+"the ACP-only stored model". It inherits from
+`StartACPConversationRequest` because that model already uses the wider
+`ACPEnabledAgent` type, so `StoredConversation` can persist either a normal
+`Agent` or an `ACPAgent` without inventing a third agent field type.
+
 #### Restore path
 
 `openhands-agent-server/openhands/agent_server/event_service.py`
@@ -261,6 +276,45 @@ through `agent.llm`; it carries a sentinel `LLM(model="acp-managed")`, and the
 actual remote model is chosen through ACP-native configuration such as
 `ACPAgent.acp_model`. Advertising `llm_profile_id` on the ACP contract would look
 supported while being a no-op.
+
+#### Why put the field there?
+
+**Option A: `_StartConversationRequestBase` or `StartACPConversationRequest`**
+
+Pros:
+
+- one declaration would flow into both public start contracts
+- because `StoredConversation` inherits from `StartACPConversationRequest`, the
+  field would also persist "for free"
+
+Cons:
+
+- it would advertise `llm_profile_id` on the ACP start API even though ACP does
+  not actually select its runtime model through `agent.llm`
+- that makes the OpenAPI contract misleading: clients would reasonably assume the
+  field is supported for ACP when it is really ignored or rejected
+- once the field is public on ACP, removing or changing it later becomes a REST
+  compatibility problem
+
+**Option B: `StartConversationRequest` plus `StoredConversation`**
+
+Pros:
+
+- the public API stays semantically honest: only the standard conversation start
+  contract exposes an LLM-profile feature
+- `StoredConversation` can still persist the profile reference for restore, even
+  though it happens to inherit from the ACP request model for agent-type breadth
+- it keeps room for ACP to design a separate, ACP-native model-selection field
+  later if needed
+
+Cons:
+
+- we duplicate one field instead of inheriting it once
+- `ConversationService` has to copy that field explicitly into
+  `StoredConversation`, rather than getting it only through inheritance
+
+I think that tradeoff is worth it. The duplication is small, while exposing a
+standard-only concept on the ACP contract would be a long-lived semantic footgun.
 
 #### Semantics
 
