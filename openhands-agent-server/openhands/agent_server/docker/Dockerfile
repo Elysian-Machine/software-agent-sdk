@@ -8,13 +8,17 @@ ARG USERNAME=openhands
 ARG UID=10001
 ARG GID=10001
 ARG PORT=8000
+# UV_EXTRAS controls optional dependency groups installed in the builder.
+# Default includes all optional groups for full production images.
+# Set to "" for lighter benchmark images (skips boto3 + browser-use).
+ARG UV_EXTRAS="--extra boto3 --extra browser"
 
 ####################################################################################
 # Builder (source mode)
 # We copy source + build a venv here for local dev and debugging.
 ####################################################################################
 FROM python:3.13-bookworm AS builder
-ARG USERNAME UID GID
+ARG USERNAME UID GID UV_EXTRAS
 ENV UV_PROJECT_ENVIRONMENT=/agent-server/.venv
 ENV UV_PYTHON_INSTALL_DIR=/agent-server/uv-managed-python
 
@@ -31,18 +35,18 @@ COPY --chown=${USERNAME}:${USERNAME} openhands-tools ./openhands-tools
 COPY --chown=${USERNAME}:${USERNAME} openhands-workspace ./openhands-workspace
 COPY --chown=${USERNAME}:${USERNAME} openhands-agent-server ./openhands-agent-server
 RUN --mount=type=cache,target=/home/${USERNAME}/.cache,uid=${UID},gid=${GID} \
-    uv python install 3.13 && uv venv --python 3.13 .venv && uv sync --frozen --no-editable --managed-python --extra boto3
+    uv python install 3.13 && uv venv --python 3.13 .venv && uv sync --frozen --no-editable --managed-python ${UV_EXTRAS}
 
 ####################################################################################
 # Binary Builder (binary mode)
 # We run pyinstaller here to produce openhands-agent-server
 ####################################################################################
 FROM builder AS binary-builder
-ARG USERNAME UID GID
+ARG USERNAME UID GID UV_EXTRAS
 
 # We need --dev for pyinstaller
 RUN --mount=type=cache,target=/home/${USERNAME}/.cache,uid=${UID},gid=${GID} \
-    uv sync --frozen --dev --no-editable --extra boto3
+    uv sync --frozen --dev --no-editable ${UV_EXTRAS}
 
 RUN --mount=type=cache,target=/home/${USERNAME}/.cache,uid=${UID},gid=${GID} \
     uv run pyinstaller openhands-agent-server/openhands/agent_server/agent-server.spec

@@ -751,6 +751,11 @@ def build_with_telemetry(opts: BuildOptions) -> BuildResult:
         "--build-arg",
         f"OPENHANDS_BUILD_GIT_REF={opts.git_ref}",
     ]
+    # Allow overriding UV_EXTRAS to control optional deps (e.g., skip boto3
+    # for benchmark builds). When unset, the Dockerfile default is used.
+    uv_extras = os.environ.get("OPENHANDS_UV_EXTRAS")
+    if uv_extras is not None:
+        args += ["--build-arg", f"UV_EXTRAS={uv_extras}"]
     if push:
         args += ["--platform", ",".join(opts.platforms), "--push"]
     else:
