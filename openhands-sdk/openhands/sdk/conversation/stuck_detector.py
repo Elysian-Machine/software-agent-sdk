@@ -1,3 +1,5 @@
+from collections.abc import Callable
+
 from openhands.sdk.conversation.state import ConversationState
 from openhands.sdk.conversation.types import StuckDetectionThresholds
 from openhands.sdk.event import (
@@ -198,6 +200,28 @@ class StuckDetector:
         # Check if observations are errors
         return False
 
+    def _count_consecutive_agent_messages(
+        self,
+        events: list[Event],
+        predicate: Callable[[MessageEvent], bool],
+    ) -> int:
+        """Count consecutive agent messages matching predicate from most recent.
+
+        Iterates backwards through events, counting agent messages that match
+        the predicate. Stops at the first non-matching agent message, user
+        message, or non-CondensationSummaryEvent.
+        """
+        count = 0
+        for event in reversed(events):
+            if isinstance(event, CondensationSummaryEvent):
+                continue
+            if not isinstance(event, MessageEvent) or event.source == "user":
+                break
+            if not predicate(event):
+                break
+            count += 1
+        return count
+
     def _is_stuck_monologue(self, events: list[Event]) -> bool:
         """Detect monologue of agent messages that are NOT reasoning-only.
 
@@ -211,29 +235,23 @@ class StuckDetector:
         if len(events) < threshold:
             return False
 
-        message_count = 0
-        for event in reversed(events):
-            if isinstance(event, MessageEvent):
-                if event.source == "agent":
-                    has_content = self._message_has_content(event)
-                    has_reasoning = self._message_has_reasoning(event)
-                    # Skip reasoning-only messages (handled by needs_reasoning_nudge)
-                    if has_reasoning and not has_content:
-                        break
-                    message_count += 1
-                elif event.source == "user":
-                    break
-            elif isinstance(event, CondensationSummaryEvent):
-                continue
-            else:
-                break
+        def is_not_reasoning_only(e: MessageEvent) -> bool:
+            return not (
+                self._message_has_reasoning(e) and not self._message_has_content(e)
+            )
 
-        return message_count >= threshold
+        count = self._count_consecutive_agent_messages(events, is_not_reasoning_only)
+        return count >= threshold
 
     def needs_reasoning_nudge(self) -> bool:
         """Check if agent has consecutive reasoning-only responses needing a nudge.
 
-        Returns True if we should inject a nudge prompt to guide the LLM.
+        Example:
+            [UserMsg, AgentReasoningOnly, AgentReasoningOnly, AgentReasoningOnly]
+             ^       ^-- count starts here
+             └-- last_user_msg_index
+
+        Returns True if reasoning_only_count >= threshold.
         """
         events = list(self.state.events[-MAX_EVENTS_TO_SCAN_FOR_STUCK_DETECTION:])
 
@@ -251,24 +269,11 @@ class StuckDetector:
         if len(events) < self.monologue_threshold:
             return False
 
-        reasoning_only_count = 0
-        for event in reversed(events):
-            if isinstance(event, MessageEvent):
-                if event.source == "agent":
-                    has_content = self._message_has_content(event)
-                    has_reasoning = self._message_has_reasoning(event)
-                    if has_reasoning and not has_content:
-                        reasoning_only_count += 1
-                    else:
-                        break
-                elif event.source == "user":
-                    break
-            elif isinstance(event, CondensationSummaryEvent):
-                continue
-            else:
-                break
+        def is_reasoning_only(e: MessageEvent) -> bool:
+            return self._message_has_reasoning(e) and not self._message_has_content(e)
 
-        return reasoning_only_count >= self.monologue_threshold
+        count = self._count_consecutive_agent_messages(events, is_reasoning_only)
+        return count >= self.monologue_threshold
 
     def _message_has_content(self, event: MessageEvent) -> bool:
         """Check if a MessageEvent has actual text content."""

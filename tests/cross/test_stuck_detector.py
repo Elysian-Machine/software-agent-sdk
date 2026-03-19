@@ -25,15 +25,19 @@ from openhands.tools.terminal.definition import (
 )
 
 
-def test_history_too_short():
-    """Test that stuck detector returns False when there are too few events."""
-    # Create a minimal agent for testing
+def _create_stuck_detector() -> tuple[ConversationState, StuckDetector]:
+    """Create a ConversationState and StuckDetector for testing."""
     llm = LLM(model="gpt-4o-mini", usage_id="test-llm")
     agent = Agent(llm=llm)
     state = ConversationState.create(
         id=uuid.uuid4(), agent=agent, workspace=LocalWorkspace(working_dir="/tmp")
     )
-    stuck_detector = StuckDetector(state)
+    return state, StuckDetector(state)
+
+
+def test_history_too_short():
+    """Test that stuck detector returns False when there are too few events."""
+    state, stuck_detector = _create_stuck_detector()
 
     # Add a user message
     user_message = MessageEvent(
@@ -97,9 +101,6 @@ class _SpyState:
 
 
 def test_is_stuck_uses_only_recent_event_window():
-    llm = LLM(model="gpt-4o-mini", usage_id="test-llm")
-    Agent(llm=llm)
-
     # Create 50 old events (should not be scanned).
     old_events = [
         MessageEvent(
@@ -170,9 +171,6 @@ def test_is_stuck_uses_only_recent_event_window():
 
 
 def test_is_stuck_without_recent_user_message_still_detects_loop():
-    llm = LLM(model="gpt-4o-mini", usage_id="test-llm")
-    Agent(llm=llm)
-
     # No user messages at all in the last-20 window.
     filler = [
         MessageEvent(
@@ -221,9 +219,6 @@ def test_is_stuck_without_recent_user_message_still_detects_loop():
 
 
 def test_is_stuck_with_fewer_than_20_events_still_detects_loop():
-    llm = LLM(model="gpt-4o-mini", usage_id="test-llm")
-    Agent(llm=llm)
-
     # Total events < 20 (8 events == 4 action-observation pairs)
     loop_events = []
     for i in range(4):
@@ -269,12 +264,7 @@ def test_is_stuck_with_fewer_than_20_events_still_detects_loop():
 
 def test_repeating_action_observation_not_stuck_less_than_4_repeats():
     """Test detection of repeating action-observation cycles."""
-    llm = LLM(model="gpt-4o-mini", usage_id="test-llm")
-    agent = Agent(llm=llm)
-    state = ConversationState.create(
-        id=uuid.uuid4(), agent=agent, workspace=LocalWorkspace(working_dir="/tmp")
-    )
-    stuck_detector = StuckDetector(state)
+    state, stuck_detector = _create_stuck_detector()
 
     # Add a user message first
     user_message = MessageEvent(
@@ -320,12 +310,7 @@ def test_repeating_action_observation_not_stuck_less_than_4_repeats():
 
 def test_repeating_action_observation_stuck():
     """Test detection of repeating action-observation cycles."""
-    llm = LLM(model="gpt-4o-mini", usage_id="test-llm")
-    agent = Agent(llm=llm)
-    state = ConversationState.create(
-        id=uuid.uuid4(), agent=agent, workspace=LocalWorkspace(working_dir="/tmp")
-    )
-    stuck_detector = StuckDetector(state)
+    state, stuck_detector = _create_stuck_detector()
 
     # Add a user message first
     user_message = MessageEvent(
@@ -371,12 +356,7 @@ def test_repeating_action_observation_stuck():
 
 def test_repeating_action_error_stuck():
     """Test detection of repeating action-error cycles."""
-    llm = LLM(model="gpt-4o-mini", usage_id="test-llm")
-    agent = Agent(llm=llm)
-    state = ConversationState.create(
-        id=uuid.uuid4(), agent=agent, workspace=LocalWorkspace(working_dir="/tmp")
-    )
-    stuck_detector = StuckDetector(state)
+    state, stuck_detector = _create_stuck_detector()
 
     # Add a user message first
     user_message = MessageEvent(
@@ -430,12 +410,7 @@ def test_repeating_action_error_stuck():
 
 def test_agent_monologue_stuck():
     """Test detection of agent monologue (repeated messages without user input)."""
-    llm = LLM(model="gpt-4o-mini", usage_id="test-llm")
-    agent = Agent(llm=llm)
-    state = ConversationState.create(
-        id=uuid.uuid4(), agent=agent, workspace=LocalWorkspace(working_dir="/tmp")
-    )
-    stuck_detector = StuckDetector(state)
+    state, stuck_detector = _create_stuck_detector()
 
     # Add a user message first
     user_message = MessageEvent(
@@ -460,12 +435,7 @@ def test_agent_monologue_stuck():
 
 def test_not_stuck_with_different_actions():
     """Test that different actions don't trigger stuck detection."""
-    llm = LLM(model="gpt-4o-mini", usage_id="test-llm")
-    agent = Agent(llm=llm)
-    state = ConversationState.create(
-        id=uuid.uuid4(), agent=agent, workspace=LocalWorkspace(working_dir="/tmp")
-    )
-    stuck_detector = StuckDetector(state)
+    state, stuck_detector = _create_stuck_detector()
 
     # Add a user message first
     user_message = MessageEvent(
@@ -514,12 +484,7 @@ def test_not_stuck_with_different_actions():
 
 def test_reset_after_user_message():
     """Test that stuck detection resets after a new user message."""
-    llm = LLM(model="gpt-4o-mini", usage_id="test-llm")
-    agent = Agent(llm=llm)
-    state = ConversationState.create(
-        id=uuid.uuid4(), agent=agent, workspace=LocalWorkspace(working_dir="/tmp")
-    )
-    stuck_detector = StuckDetector(state)
+    state, stuck_detector = _create_stuck_detector()
 
     # Add initial user message
     user_message = MessageEvent(
@@ -608,12 +573,7 @@ def test_reset_after_user_message():
 
 def test_reasoning_only_monologue_triggers_nudge():
     """Test that reasoning-only messages trigger nudge, not stuck."""
-    llm = LLM(model="gpt-4o-mini", usage_id="test-llm")
-    agent = Agent(llm=llm)
-    state = ConversationState.create(
-        id=uuid.uuid4(), agent=agent, workspace=LocalWorkspace(working_dir="/tmp")
-    )
-    stuck_detector = StuckDetector(state)
+    state, stuck_detector = _create_stuck_detector()
 
     # Add a user message first
     user_message = MessageEvent(
@@ -642,12 +602,7 @@ def test_reasoning_only_monologue_triggers_nudge():
 
 def test_empty_monologue_triggers_stuck_not_nudge():
     """Test that truly empty messages trigger stuck, not nudge."""
-    llm = LLM(model="gpt-4o-mini", usage_id="test-llm")
-    agent = Agent(llm=llm)
-    state = ConversationState.create(
-        id=uuid.uuid4(), agent=agent, workspace=LocalWorkspace(working_dir="/tmp")
-    )
-    stuck_detector = StuckDetector(state)
+    state, stuck_detector = _create_stuck_detector()
 
     # Add a user message first
     user_message = MessageEvent(
@@ -667,4 +622,122 @@ def test_empty_monologue_triggers_stuck_not_nudge():
     # Should be stuck (truly empty messages)
     assert stuck_detector.is_stuck() is True
     # Should NOT need a nudge
+    assert stuck_detector.needs_reasoning_nudge() is False
+
+
+def test_mixed_empty_then_reasoning_only():
+    """Test that empty messages followed by reasoning-only triggers neither."""
+    state, stuck_detector = _create_stuck_detector()
+
+    user_message = MessageEvent(
+        source="user",
+        llm_message=Message(role="user", content=[TextContent(text="Hello")]),
+    )
+    state.events.append(user_message)
+
+    # 2 empty messages, then 1 reasoning-only
+    for _ in range(2):
+        state.events.append(
+            MessageEvent(
+                source="agent",
+                llm_message=Message(role="assistant", content=[]),
+            )
+        )
+    state.events.append(
+        MessageEvent(
+            source="agent",
+            llm_message=Message(
+                role="assistant",
+                content=[],
+                reasoning_content="Thinking...",
+            ),
+        )
+    )
+
+    # Not stuck: only 2 empty (below threshold of 3), sequence broken
+    assert stuck_detector.is_stuck() is False
+    # Not nudge: only 1 reasoning-only (below threshold of 3)
+    assert stuck_detector.needs_reasoning_nudge() is False
+
+
+def test_mixed_reasoning_only_then_empty():
+    """Test that reasoning-only followed by empty triggers neither."""
+    state, stuck_detector = _create_stuck_detector()
+
+    user_message = MessageEvent(
+        source="user",
+        llm_message=Message(role="user", content=[TextContent(text="Hello")]),
+    )
+    state.events.append(user_message)
+
+    # 2 reasoning-only messages, then 1 empty
+    for i in range(2):
+        state.events.append(
+            MessageEvent(
+                source="agent",
+                llm_message=Message(
+                    role="assistant",
+                    content=[],
+                    reasoning_content=f"Thinking step {i}...",
+                ),
+            )
+        )
+    state.events.append(
+        MessageEvent(
+            source="agent",
+            llm_message=Message(role="assistant", content=[]),
+        )
+    )
+
+    # Not stuck: only 1 empty at the end (below threshold of 3)
+    assert stuck_detector.is_stuck() is False
+    # Not nudge: only 2 reasoning-only, broken by the empty message
+    assert stuck_detector.needs_reasoning_nudge() is False
+
+
+def test_content_message_breaks_reasoning_only_sequence():
+    """Test that a content message between reasoning-only breaks nudge."""
+    state, stuck_detector = _create_stuck_detector()
+
+    user_message = MessageEvent(
+        source="user",
+        llm_message=Message(role="user", content=[TextContent(text="Hello")]),
+    )
+    state.events.append(user_message)
+
+    # 2 reasoning-only, then 1 content message, then 1 reasoning-only
+    for i in range(2):
+        state.events.append(
+            MessageEvent(
+                source="agent",
+                llm_message=Message(
+                    role="assistant",
+                    content=[],
+                    reasoning_content=f"Thinking step {i}...",
+                ),
+            )
+        )
+    state.events.append(
+        MessageEvent(
+            source="agent",
+            llm_message=Message(
+                role="assistant",
+                content=[TextContent(text="Here is my response")],
+            ),
+        )
+    )
+    state.events.append(
+        MessageEvent(
+            source="agent",
+            llm_message=Message(
+                role="assistant",
+                content=[],
+                reasoning_content="Thinking again...",
+            ),
+        )
+    )
+
+    # Not stuck: sequence is broken by content message
+    assert stuck_detector.is_stuck() is False
+    # Not nudge: only 1 reasoning-only at the end (below threshold)
     assert stuck_detector.needs_reasoning_nudge() is False
