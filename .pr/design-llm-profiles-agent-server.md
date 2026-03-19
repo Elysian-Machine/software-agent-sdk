@@ -240,17 +240,19 @@ Server behavior:
 ##### `DELETE /api/llm-profiles/{profile_id}`
 Delete the profile definition.
 
-### 4. Extend conversation creation to accept a profile reference
+### 4. Extend standard conversation creation to accept a profile reference
 
-Add an optional field on the shared start-request base so it flows into both
-conversation contracts:
+Add an optional field on the standard conversation start request and persist it in
+stored metadata:
 
-- `_StartConversationRequestBase.llm_profile_id: str | None = None`
-- inherited by `StartConversationRequest`
-- inherited by `StartACPConversationRequest`
+- `StartConversationRequest.llm_profile_id: str | None = None`
+- `StoredConversation.llm_profile_id: str | None = None`
 
-`StoredConversation` currently inherits from `StartACPConversationRequest`, so the
-same field would also persist naturally in `meta.json`.
+Do **not** add this to `StartACPConversationRequest`. `ACPAgent` does not execute
+through `agent.llm`; it carries a sentinel `LLM(model="acp-managed")`, and the
+actual remote model is chosen through ACP-native configuration such as
+`ACPAgent.acp_model`. Advertising `llm_profile_id` on the ACP contract would look
+supported while being a no-op.
 
 #### Semantics
 
@@ -284,9 +286,10 @@ Expose a dedicated profile-binding endpoint rather than a generic `/llm` setter.
 
 - `POST /api/conversations/{conversation_id}/llm_profile`
 
-#### ACP contract parity
-
-- `POST /api/acp/conversations/{conversation_id}/llm_profile`
+ACP conversations should **not** get an equivalent endpoint in this design.
+`ACPAgent` execution is ACP-server-managed, so swapping `agent.llm` would not
+change the model that actually runs remotely. Any ACP-side model switching should
+be designed separately around ACP-native configuration such as `acp_model`.
 
 Request body:
 
@@ -385,9 +388,12 @@ This avoids surprising mid-run behavior.
 
 ### Additive fields on existing models
 
-- `_StartConversationRequestBase.llm_profile_id: str | None = None`
+- `StartConversationRequest.llm_profile_id: str | None = None`
+- `StoredConversation.llm_profile_id: str | None = None`
 - `ConversationInfo.llm_profile_id: str | None = None`
-- `ACPConversationInfo.llm_profile_id: str | None = None`
+
+`ACPConversationInfo` intentionally stays unchanged for now because `ACPAgent`
+does not use `agent.llm` as its execution model selector.
 
 Returning `llm_profile_id` in conversation info is important so remote clients can
 see whether the conversation is profile-backed even though `agent.llm` is still
@@ -414,13 +420,15 @@ I would include these additive SDK changes in the same implementation if the
 surface stays small:
 
 1. `RemoteConversation(..., llm_profile_id: str | None = None)`
-   - when creating a new remote conversation, include the optional field in the
-     POST payload
+   - when creating a new non-ACP remote conversation, include the optional field
+     in the POST payload
+   - reject `llm_profile_id` for `ACPAgent` early rather than silently ignoring it
 
 2. `RemoteConversation.switch_profile(profile_id: str)`
-   - call the new REST endpoint
+   - for non-ACP remote conversations, call the new REST endpoint
    - invalidate cached conversation info so the next state read reflects the new
      `llm_profile_id`
+   - raise `NotImplementedError` or `ValueError` for `ACPAgent`
 
 I would **not** make `switch_profile()` an abstract method on `BaseConversation`
 in this step, because that is a broader public API change for external
@@ -485,10 +493,11 @@ resolved snapshot in `StoredConversation.agent.llm` is a cheap safety net.
 Build this as a **profile-first** integration:
 
 1. server-managed `/api/llm-profiles`
-2. additive `llm_profile_id` on conversation creation/info models
-3. dedicated conversation profile switch endpoint
+2. additive `llm_profile_id` on standard conversation creation/info models plus
+   `StoredConversation`
+3. dedicated standard-conversation profile switch endpoint
 4. restore-time re-resolution from profile, with snapshot fallback
-5. small `RemoteConversation` convenience additions
+5. small `RemoteConversation` convenience additions for non-ACP conversations
 
 This reuses the SDK's current LLM profile implementation, aligns with issue
 #1451's runtime/restore flexibility, and avoids making `/llm` the main public
@@ -501,9 +510,10 @@ The lowest-risk implementation path looks like this:
 1. make `LLMProfileStore` cipher-aware
 2. add `OH_LLM_PROFILES_PATH` and a tiny server wrapper around the store
 3. add `/api/llm-profiles` CRUD + tests
-4. add `llm_profile_id` to conversation request/info models
+4. add `llm_profile_id` to standard conversation request/info models and
+   `StoredConversation`
 5. resolve profiles inside `ConversationService._start_conversation()`
-6. add conversation switch endpoints + tests
+6. add standard-conversation switch endpoint + tests
 7. add restore-time profile resolution in `EventService.start()`
 8. add `RemoteConversation` support + tests
 
