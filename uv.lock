@@ -26,6 +26,7 @@ constraints = [
 
 [manifest.dependency-groups]
 dev = [
+    { name = "browser-use", specifier = ">=0.8.0" },
     { name = "griffe", extras = ["pypi"], specifier = ">=2.0.0" },
     { name = "packaging", specifier = ">=24.2" },
     { name = "pre-commit", specifier = ">=4.3.0" },
