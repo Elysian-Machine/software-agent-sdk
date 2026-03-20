@@ -371,7 +371,8 @@ class LocalConversation(BaseConversation):
                         )
                 except Exception as e:
                     logger.warning(
-                        f"Failed to auto-load plugins from marketplace '{reg.name}': {e}"
+                        f"Failed to auto-load plugins from marketplace "
+                        f"'{reg.name}': {e}"
                     )
 
         # Load all collected plugins
