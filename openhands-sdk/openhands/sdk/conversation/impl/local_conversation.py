@@ -367,7 +367,10 @@ class LocalConversation(BaseConversation):
                             repo_path=subpath,
                         )
                         plugins_to_load.append(
-                            (plugin_source, f"marketplace:{reg.name}/{plugin_entry.name}")
+                            (
+                                plugin_source,
+                                f"marketplace:{reg.name}/{plugin_entry.name}",
+                            )
                         )
                 except Exception as e:
                     logger.warning(

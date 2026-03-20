@@ -20,7 +20,6 @@ from __future__ import annotations
 import shutil
 import subprocess
 import tempfile
-import warnings
 from dataclasses import dataclass
 from pathlib import Path
 from typing import TYPE_CHECKING
@@ -295,7 +294,7 @@ def load_all_skills(
     org_name: str | None = None,
     sandbox_exposed_urls: list[ExposedUrlData] | None = None,
     marketplace_path: str | None = DEFAULT_MARKETPLACE_PATH,
-    registered_marketplaces: list["MarketplaceRegistration"] | None = None,
+    registered_marketplaces: list[MarketplaceRegistration] | None = None,
 ) -> SkillLoadResult:
     """Load and merge skills from all configured sources.
 
@@ -390,7 +389,7 @@ def load_all_skills(
 
 
 def _load_marketplace_skills(
-    registrations: list["MarketplaceRegistration"],
+    registrations: list[MarketplaceRegistration],
 ) -> list[Skill]:
     """Load skills from registered marketplaces with auto_load='all'.
 
@@ -403,7 +402,11 @@ def _load_marketplace_skills(
     Returns:
         List of skills loaded from auto-load marketplaces.
     """
-    from openhands.sdk.plugin import MarketplaceRegistry, Plugin, fetch_plugin_with_resolution
+    from openhands.sdk.plugin import (
+        MarketplaceRegistry,
+        Plugin,
+        fetch_plugin_with_resolution,
+    )
 
     all_skills: list[Skill] = []
 
@@ -422,7 +425,9 @@ def _load_marketplace_skills(
             for plugin_entry in marketplace.plugins:
                 try:
                     # Resolve and fetch the plugin
-                    source, ref, subpath = marketplace.resolve_plugin_source(plugin_entry)
+                    source, ref, subpath = marketplace.resolve_plugin_source(
+                        plugin_entry
+                    )
                     path, resolved_ref = fetch_plugin_with_resolution(
                         source=source,
                         ref=ref,
@@ -444,9 +449,7 @@ def _load_marketplace_skills(
                     )
 
         except Exception as e:
-            logger.warning(
-                f"Failed to load marketplace '{reg.name}': {e}"
-            )
+            logger.warning(f"Failed to load marketplace '{reg.name}': {e}")
 
     return all_skills
 
