@@ -58,12 +58,6 @@ RUN test -x /agent-server/dist/openhands-agent-server
 FROM ${BASE_IMAGE} AS base-image-minimal
 ARG USERNAME UID GID PORT
 
-
-ARG OPENHANDS_BUILD_GIT_SHA=unknown
-ARG OPENHANDS_BUILD_GIT_REF=unknown
-ENV OPENHANDS_BUILD_GIT_SHA=${OPENHANDS_BUILD_GIT_SHA}
-ENV OPENHANDS_BUILD_GIT_REF=${OPENHANDS_BUILD_GIT_REF}
-
 # Install base packages and create user
 RUN set -eux; \
     # Install base packages (works for both Debian-based images)
@@ -85,24 +79,15 @@ RUN set -eux; \
     chown -R ${USERNAME}:${USERNAME} /workspace; \
     rm -rf /var/lib/apt/lists/*
 
-# Pre-install ACP servers for ACPAgent support (Claude Code + Codex)
-# Install Node.js/npm if not present (SWE-bench base images may lack them)
-RUN set -eux; \
-    if ! command -v npm >/dev/null 2>&1; then \
-        curl -fsSL https://deb.nodesource.com/setup_22.x | bash - && \
-        apt-get install -y --no-install-recommends nodejs && \
-        rm -rf /var/lib/apt/lists/*; \
-    fi; \
-    npm install -g @zed-industries/claude-agent-acp @zed-industries/codex-acp
-
-# Configure Claude Code managed settings for headless operation:
-# Allow all tool permissions (no human in the loop to approve).
-RUN mkdir -p /etc/claude-code && \
-    echo '{"permissions":{"allow":["Edit","Read","Bash"]}}' > /etc/claude-code/managed-settings.json
-
 # NOTE: we should NOT include UV_PROJECT_ENVIRONMENT here,
 # since the agent might use it to perform other work (e.g. tools that use Python)
 COPY --from=ghcr.io/astral-sh/uv /uv /uvx /bin/
+
+# Build metadata — placed AFTER expensive layers to preserve cache across SDK bumps
+ARG OPENHANDS_BUILD_GIT_SHA=unknown
+ARG OPENHANDS_BUILD_GIT_REF=unknown
+ENV OPENHANDS_BUILD_GIT_SHA=${OPENHANDS_BUILD_GIT_SHA}
+ENV OPENHANDS_BUILD_GIT_REF=${OPENHANDS_BUILD_GIT_REF}
 
 USER ${USERNAME}
 WORKDIR /
