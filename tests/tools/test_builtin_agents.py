@@ -107,19 +107,27 @@ def test_general_purpose_has_no_browser_tools() -> None:
 def test_register_builtins_agents_skips_web_researcher_without_browser() -> None:
     """When enable_browser=False, the web researcher agent should not be registered."""
     register_builtins_agents(enable_browser=False)
-    with pytest.raises(ValueError, match="Unknown agent 'web researcher'"):
-        get_agent_factory("web researcher")
+    with pytest.raises(ValueError, match="Unknown agent 'web-researcher'"):
+        get_agent_factory("web-researcher")
 
 
 @pytest.mark.parametrize(
-    "old_name",
-    ["default", "default cli mode", "explore", "bash"],
+    "old_name, expected_tools",
+    [
+        ("default", ["terminal", "file_editor", "task_tracker"]),
+        ("default cli mode", ["terminal", "file_editor", "task_tracker"]),
+        ("explore", ["terminal"]),
+        ("bash", ["terminal"]),
+    ],
 )
-def test_deprecated_agent_names_still_work(old_name: str) -> None:
-    """Old agent names should work with deprecation warnings."""
+def test_deprecated_agent_names_still_work(
+    old_name: str, expected_tools: list[str]
+) -> None:
+    """Old agent names should resolve to the correct agent with the right tools."""
     register_builtins_agents()
     llm = _make_test_llm()
 
     with pytest.warns(DeprecatedWarning, match=f"'{old_name}'"):
         agent = get_agent_factory(old_name).factory_func(llm)
         assert isinstance(agent, Agent)
+        assert [t.name for t in agent.tools] == expected_tools
