@@ -3,8 +3,9 @@
 ## Summary
 
 Instead of reviving PR #1544's per-conversation `POST /api/conversations/{id}/llm`
-contract, let conversation creation/runtime switching refer to named LLM
-profiles by ID and reuse the SDK's existing `LLMProfileStore` directly.
+contract, expose `/api/llm-profiles` as REST CRUD over the SDK's existing
+`LLMProfileStore`, then let conversation creation/runtime switching refer to
+those named profiles by ID.
 
 This fits the SDK as it exists today:
 
@@ -13,12 +14,13 @@ This fits the SDK as it exists today:
 - conversation restore already follows the issue #1451 direction: runtime-provided
   agent components win on restore after tool verification
 
-The missing link is agent-server. The server today has no wiring to the existing
-profile store for start/switch/restore, and no way for remote clients to bind a
-conversation to a named profile without resending the full `LLM` payload.
+The missing link is agent-server. The server today has no REST surface for the
+existing profile store, no wiring to use that same store for
+start/switch/restore, and no way for remote clients to bind a conversation to a
+named profile without resending the full `LLM` payload.
 
-If we later want remote CRUD for profiles too, `/api/llm-profiles` should be a
-thin REST wrapper over that same store, not a second server-side storage model.
+The important design constraint is: `/api/llm-profiles` should be a thin REST
+wrapper over that same store, not a second server-side storage model.
 
 ## Why not reuse PR #1544's `/llm` approach?
 
@@ -139,23 +141,25 @@ before constructing `LocalConversation`**.
 
 ### What is missing
 
-1. no agent-server wiring to the existing `LLMProfileStore`
-2. no way to start a conversation by profile reference
-3. no REST endpoint to switch an existing conversation's active profile
-4. no persisted conversation metadata telling the server that a conversation is
+1. no REST API for remote CRUD over the existing profile store
+2. no agent-server wiring to the existing `LLMProfileStore` for conversation
+   start/switch/restore
+3. no way to start a conversation by profile reference
+4. no REST endpoint to switch an existing conversation's active profile
+5. no persisted conversation metadata telling the server that a conversation is
    profile-backed and should be re-resolved on restore
-5. optionally, no REST API for remote CRUD over the existing profile store
 
 ## Goals
 
-1. Let `POST /api/conversations` start a conversation from a profile reference.
-2. Let an existing conversation switch to another profile over REST.
-3. Make restore use the current profile contents when available.
-4. Avoid resending credentials for every conversation start/switch.
-5. Keep the REST rollout additive and backward compatible.
-6. Reuse the SDK's existing `LLMProfileStore` and `LocalConversation.switch_profile`
+1. Let remote clients create/list/update/delete LLM profiles over REST.
+2. Let `POST /api/conversations` start a conversation from a profile reference.
+3. Let an existing conversation switch to another profile over REST.
+4. Make restore use the current profile contents when available.
+5. Avoid resending credentials for every conversation start/switch.
+6. Keep the REST rollout additive and backward compatible.
+7. Reuse the SDK's existing `LLMProfileStore` and `LocalConversation.switch_profile`
    concepts rather than inventing a second model.
-7. If remote profile CRUD is exposed, make it a thin wrapper over the same store.
+8. Keep `/api/llm-profiles` as a thin wrapper over the same store.
 
 ## Non-goals
 
@@ -287,13 +291,16 @@ into core SDK construction/serialization paths, not only the REST layer.
 
 ## Proposed design (A1)
 
-### 1. Reuse `LLMProfileStore` directly; do not add a second store
+### 1. Reuse `LLMProfileStore` directly and expose it over REST
 
 A1 does not need a new agent-server "profile store" abstraction or a second
-persistence model. The server can use the existing `LLMProfileStore` directly.
+persistence model. The server should use the existing `LLMProfileStore`
+directly, both internally and through REST.
 
-Where the server actually needs it:
+Where the server needs it:
 
+- **CRUD**: `/api/llm-profiles` should create/list/load/delete profiles through
+  that same store so REST clients can manage reusable profiles
 - **start**: resolve `llm_profile_id` into a concrete `LLM` before creating the
   runtime conversation
 - **switch**: load the requested profile before calling conversation-side switch
@@ -301,7 +308,7 @@ Where the server actually needs it:
 - **restore**: re-resolve `StoredConversation.llm_profile_id` before constructing
   `LocalConversation`
 
-That is the minimum required profile-store surface for A1.
+That is the required profile-store surface for A1.
 
 For the initial design, I would keep the existing SDK default directory
 `Path.home() / ".openhands" / "profiles"`.
@@ -315,22 +322,19 @@ Why keep the same default for server too?
 - putting profiles under `workspace/` does **not** meaningfully improve security in
   the current same-UID sandbox model, so a separate `workspace/llm_profiles`
   default would add divergence without real isolation
-- it avoids an A1-only config knob unless we actually need one operationally
+- it avoids inventing a server-only store location just for A1
 
 If deployments later need an explicit location, we can add an additive knob such
 as `OH_LLM_PROFILES_PATH`, and then a matching SDK hook such as
-`LocalConversation(..., profile_store_dir: str | Path | None = None)`. But that
-should be treated as follow-up flexibility, not as a prerequisite for the first
-A1 rollout.
+`LocalConversation(..., profile_store_dir: str | Path | None = None)`. That is
+follow-up flexibility for deployment layout, not a separate storage design.
 
-### 2. If we expose remote profile CRUD, make `LLMProfileStore` cipher-aware
+### 2. Make `LLMProfileStore` cipher-aware for REST profile writes
 
-The minimal A1 conversation-binding design only needs profile lookup. We only
-need write-path changes if we also expose remote profile create/update over REST.
-
-In that case, `LLMProfileStore.save()` should learn to use the agent-server
-cipher so server-created secret-bearing profiles get the same secret-at-rest
-behavior that conversations already have.
+Because A1 does require remote profile create/update over REST,
+`LLMProfileStore.save()` should learn to use the agent-server cipher so
+server-created secret-bearing profiles get the same secret-at-rest behavior that
+conversations already have.
 
 Proposed additive SDK change:
 
@@ -343,15 +347,14 @@ Implementation detail:
 - save with `context={"cipher": cipher}` when `cipher` is provided
 - otherwise preserve current SDK behavior
 
-That keeps the store reusable by the SDK while making a future REST write path
-safe.
+That keeps the store reusable by the SDK while making the required REST write
+path safe.
 
-### 3. Optional thin `/api/llm-profiles` wrapper
+### 3. Expose `/api/llm-profiles` as a thin wrapper over the store
 
-If remote clients need to create/list/update/delete profiles through agent-server,
-add a new router alongside the existing `/api/llm` informational endpoints.
+Add a new router alongside the existing `/api/llm` informational endpoints.
 This should stay a thin wrapper over `LLMProfileStore`, not a separate storage
-layer, and it is not required for the minimal A1 conversation-binding flow.
+layer.
 
 #### Endpoints
 
@@ -528,8 +531,8 @@ This is much more aligned with issue #1451 than a hard failure.
 
 ### 7. Keep profile edits explicit for live conversations
 
-If we expose profile updates via `PUT /api/llm-profiles/{id}`, that should
-**not** automatically mutate every conversation that references the profile.
+Updating a profile via `PUT /api/llm-profiles/{id}` should **not** automatically
+mutate every conversation that references the profile.
 
 Instead:
 
@@ -544,9 +547,7 @@ This avoids surprising mid-run behavior.
 
 ### New conversation started from a profile
 
-1. profile `fast` already exists in `LLMProfileStore`
-   - either because it was created out of band
-   - or, if we expose the optional CRUD API, via `PUT /api/llm-profiles/fast`
+1. client creates or updates `fast` via `PUT /api/llm-profiles/fast`
 2. client calls `POST /api/conversations` with:
    - normal `agent`, `workspace`, etc.
    - `llm_profile_id="fast"`
@@ -582,15 +583,10 @@ This avoids surprising mid-run behavior.
 
 ### New request/response models
 
-For the minimal A1 rollout, the only required new model is:
-
-- `SetConversationLLMProfileRequest`
-
-If we also ship the optional `/api/llm-profiles` router, add:
-
 - `UpsertLLMProfileRequest`
 - `LLMProfileResponse`
 - `LLMProfileListResponse`
+- `SetConversationLLMProfileRequest`
 
 ### Additive fields on existing models
 
@@ -644,25 +640,22 @@ is safer.
 ## Security / secret handling
 
 Profiles are being introduced specifically so clients do not have to resend
-credentials repeatedly. Secret persistence therefore matters most if agent-server
-also exposes profile create/update over REST.
+credentials repeatedly. Because A1 includes REST profile CRUD, secret
+persistence is central to the design.
 
-Recommended rules for that optional CRUD surface:
+Recommended rules:
 
 1. If the server has a cipher (`OH_SECRET_KEY`), profile secrets are stored
    encrypted at rest.
 2. If the server has no cipher and the client tries to create a profile with
    secrets, reject the request with `400 Bad Request`.
 3. `GET /api/llm-profiles*` never returns exposed secrets.
-
-Regardless of whether CRUD is exposed:
-
 4. `ConversationInfo` continues returning the effective `agent.llm` with the
    existing redaction behavior.
 
 This is stricter than the plain SDK utility, and that is good. The server should
-not silently persist plaintext credentials if it accepts secret-bearing profiles
-via REST.
+not silently persist plaintext credentials when it accepts secret-bearing
+profiles via REST.
 
 ## Backward compatibility
 
@@ -701,16 +694,18 @@ resolved snapshot in `StoredConversation.agent.llm` is a cheap safety net.
 
 ## Recommendation
 
-Build this as a **profile-first** integration, but keep A1 minimal:
+Build this as a **profile-first** integration, with REST profile management as a
+first-class part of A1:
 
-1. reuse the existing `LLMProfileStore` directly for start/switch/restore
-2. add additive `llm_profile_id` on standard conversation creation/info models
+1. expose `/api/llm-profiles` CRUD as a thin wrapper over the existing
+   `LLMProfileStore`
+2. reuse that same `LLMProfileStore` directly for conversation start,
+   switch, and restore
+3. add additive `llm_profile_id` on standard conversation creation/info models
    plus `StoredConversation`
-3. add a dedicated standard-conversation profile switch endpoint
-4. restore-time re-resolution from profile, with snapshot fallback
-5. add small `RemoteConversation` convenience additions for non-ACP conversations
-6. only if remote profile management is needed, add a thin `/api/llm-profiles`
-   wrapper over the same store
+4. add a dedicated standard-conversation profile switch endpoint
+5. restore-time re-resolution from profile, with snapshot fallback
+6. add small `RemoteConversation` convenience additions for non-ACP conversations
 
 This reuses the SDK's current LLM profile implementation, aligns with issue
 #1451's runtime/restore flexibility, and avoids making `/llm` the main public
@@ -720,15 +715,16 @@ abstraction for a problem that is really about reusable named profiles.
 
 The lowest-risk implementation path looks like this:
 
-1. add `llm_profile_id` to standard conversation request/info models and
+1. make `LLMProfileStore` cipher-aware for REST profile writes
+2. add `/api/llm-profiles` CRUD + tests as a thin wrapper over
+   `LLMProfileStore()`
+3. add `llm_profile_id` to standard conversation request/info models and
    `StoredConversation`
-2. resolve profiles inside `ConversationService._start_conversation()` using the
+4. resolve profiles inside `ConversationService._start_conversation()` using the
    existing `LLMProfileStore()`
-3. add standard-conversation switch endpoint + tests
-4. add restore-time profile resolution in `EventService.start()`
-5. add `RemoteConversation` support + tests
-6. if we want remote CRUD, make `LLMProfileStore` cipher-aware
-7. if we want remote CRUD, add optional `/api/llm-profiles` endpoints + tests
+5. add standard-conversation switch endpoint + tests
+6. add restore-time profile resolution in `EventService.start()`
+7. add `RemoteConversation` support + tests
 8. only if deployments actually need it, add `OH_LLM_PROFILES_PATH` and a
    matching SDK store-dir hook
 
