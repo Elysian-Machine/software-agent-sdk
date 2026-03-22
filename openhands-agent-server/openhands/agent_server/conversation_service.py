@@ -563,22 +563,26 @@ class ConversationService:
         if event_service is None:
             return False
 
+        state: ConversationState | None = None
         if request.title is not None:
             event_service.stored.title = request.title.strip()
         if request.tags is not None:
             event_service.stored.tags = request.tags
-            # Also update tags on the conversation state so they persist
+            # Keep the persisted ConversationState update under the state lock so
+            # autosave and state-change callbacks observe a consistent mutation.
             state = await event_service.get_state()
-            state.tags = request.tags
+            with state:
+                state.tags = request.tags
         event_service.stored.updated_at = utc_now()
         # Save the updated metadata to disk
         await event_service.save_meta()
 
         # Notify conversation webhooks about the updated conversation
-        state = await event_service.get_state()
-        conversation_info = _compose_webhook_conversation_info(
-            event_service.stored, state
-        )
+        state = state or await event_service.get_state()
+        with state:
+            conversation_info = _compose_webhook_conversation_info(
+                event_service.stored, state
+            )
         await self._notify_conversation_webhooks(conversation_info)
 
         updated_fields = []
