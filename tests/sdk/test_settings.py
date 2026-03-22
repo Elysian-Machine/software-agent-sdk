@@ -4,12 +4,7 @@ from openhands.sdk import LLM, Agent, AgentSettings, SettingProminence, Tool
 from openhands.sdk.context.condenser import LLMSummarizingCondenser
 from openhands.sdk.critic.base import IterativeRefinementConfig
 from openhands.sdk.critic.impl.api import APIBasedCritic
-from openhands.sdk.settings import (
-    CURRENT_SCHEMA_VERSION,
-    CondenserSettings,
-    VerificationSettings,
-)
-from openhands.sdk.settings_metadata import SETTINGS_METADATA_KEY
+from openhands.sdk.settings import CondenserSettings, VerificationSettings
 
 
 # Fields on LLM that have ``exclude=True`` and should not appear in the schema.
@@ -62,11 +57,6 @@ def test_agent_settings_export_schema_groups_sections() -> None:
     assert llm_fields["llm.litellm_extra_body"].value_type == "object"
     assert llm_fields["llm.litellm_extra_body"].default == {}
     assert llm_fields["llm.litellm_extra_body"].prominence is SettingProminence.MINOR
-    llm_model_field_extra = LLM.model_fields["model"].json_schema_extra
-    assert not isinstance(llm_model_field_extra, dict) or (
-        SETTINGS_METADATA_KEY not in llm_model_field_extra
-    )
-
     assert llm_fields["llm.num_retries"].prominence is SettingProminence.MINOR
 
     # Excluded fields must not appear
@@ -208,28 +198,8 @@ def test_create_agent_critic_with_server_url_override() -> None:
     assert agent.critic.model_name == "my-critic"
 
 
-# ---------------------------------------------------------------------------
-# Schema versioning
-# ---------------------------------------------------------------------------
-
-
-def test_schema_version_is_serialized() -> None:
-    settings = AgentSettings()
-    data = settings.model_dump()
-    assert data["schema_version"] == CURRENT_SCHEMA_VERSION
-
-
-def test_missing_schema_version_defaults_to_v1() -> None:
-    """Old serialized data without schema_version deserializes as v1."""
-    data = {"agent": "CodeActAgent", "llm": {"model": "test-model"}}
-    settings = AgentSettings.model_validate(data)
-    assert settings.schema_version == 1
-    assert settings.agent == "CodeActAgent"
-
-
-def test_roundtrip_preserves_schema_version() -> None:
+def test_roundtrip_preserves_llm_model() -> None:
     settings = AgentSettings(llm=LLM(model="test-model"))
     data = settings.model_dump()
     restored = AgentSettings.model_validate(data)
-    assert restored.schema_version == settings.schema_version
     assert restored.llm.model == "test-model"

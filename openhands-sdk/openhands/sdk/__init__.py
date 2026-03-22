@@ -52,8 +52,6 @@ from openhands.sdk.plugin import Plugin
 from openhands.sdk.settings import (
     AgentSettings,
     CondenserSettings,
-    CriticSettings,
-    SecuritySettings,
     SettingsChoice,
     SettingsFieldSchema,
     SettingsSchema,
@@ -139,8 +137,6 @@ __all__ = [
     "AgentContext",
     "LLMSummarizingCondenser",
     "CondenserSettings",
-    "CriticSettings",
-    "SecuritySettings",
     "VerificationSettings",
     "AgentSettings",
     "SettingsChoice",

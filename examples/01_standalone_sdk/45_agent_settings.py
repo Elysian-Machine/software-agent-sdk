@@ -2,8 +2,7 @@
 
 Demonstrates:
 1. Configuring an agent entirely through AgentSettings (LLM, tools, condenser).
-2. Serializing settings to JSON and restoring them — schema_version travels
-   with the payload so future migrations work automatically.
+2. Serializing settings to JSON and restoring them.
 3. Building an Agent from settings via ``create_agent()``.
 4. Running a short conversation to prove the settings take effect.
 5. Changing the tool list and showing the agent's capabilities change.
@@ -15,7 +14,7 @@ import os
 from pydantic import SecretStr
 
 from openhands.sdk import LLM, AgentSettings, Conversation, Tool
-from openhands.sdk.settings import CURRENT_SCHEMA_VERSION, CondenserSettings
+from openhands.sdk.settings import CondenserSettings
 from openhands.tools.file_editor import FileEditorTool
 from openhands.tools.terminal import TerminalTool
 
@@ -43,11 +42,7 @@ print("Serialized settings (JSON):")
 print(json.dumps(payload, indent=2, default=str)[:800], "…")
 print()
 
-assert payload["schema_version"] == CURRENT_SCHEMA_VERSION
-print(f"✓ schema_version={payload['schema_version']} present in serialized output")
-
 restored = AgentSettings.model_validate(payload)
-assert restored.schema_version == CURRENT_SCHEMA_VERSION
 assert restored.condenser.enabled is True
 assert restored.condenser.max_size == 50
 assert len(restored.tools) == 2
@@ -90,17 +85,6 @@ assert len(terminal_agent.tools) == 1
 assert terminal_agent.condenser is None  # condenser disabled in these settings
 print("✓ Different settings produce different agent configuration")
 print()
-
-# ── 5. Deserialize old data missing schema_version ───────────────────────
-old_data = {
-    "agent": "CodeActAgent",
-    "llm": {"model": "some-old-model"},
-    "tools": [{"name": "TerminalTool"}],
-}
-old_settings = AgentSettings.model_validate(old_data)
-assert old_settings.schema_version == 1
-assert old_settings.tools[0].name == "TerminalTool"
-print("✓ Old data without schema_version deserializes as v1")
 
 # ── Cleanup ──────────────────────────────────────────────────────────────
 os.remove(os.path.join(cwd, "hello_settings.txt"))

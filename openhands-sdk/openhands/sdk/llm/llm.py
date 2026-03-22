@@ -23,6 +23,7 @@ from pydantic.json_schema import SkipJsonSchema
 
 from openhands.sdk.llm.fallback_strategy import FallbackStrategy
 from openhands.sdk.llm.utils.model_info import get_litellm_model_info
+from openhands.sdk.settings_metadata import SettingProminence, field_meta
 from openhands.sdk.utils.deprecation import warn_deprecated
 from openhands.sdk.utils.pydantic_secrets import serialize_secret, validate_secret
 
@@ -164,14 +165,20 @@ class LLM(BaseModel, RetryMixin, NonNativeToolCallingMixin):
     model: str = Field(
         default="claude-sonnet-4-20250514",
         description="Model name.",
+        json_schema_extra=field_meta(SettingProminence.CRITICAL),
     )
     api_key: str | SecretStr | None = Field(
         default=None,
         description="API key.",
+        json_schema_extra=field_meta(
+            SettingProminence.CRITICAL,
+            label="API Key",
+        ),
     )
     base_url: str | None = Field(
         default=None,
         description="Custom base URL.",
+        json_schema_extra=field_meta(SettingProminence.CRITICAL),
     )
     api_version: str | None = Field(
         default=None,
@@ -190,27 +197,47 @@ class LLM(BaseModel, RetryMixin, NonNativeToolCallingMixin):
 
     openrouter_site_url: str = Field(
         default="https://docs.all-hands.dev/",
+        json_schema_extra=field_meta(SettingProminence.MINOR),
     )
     openrouter_app_name: str = Field(
         default="OpenHands",
+        json_schema_extra=field_meta(SettingProminence.MINOR),
     )
 
-    num_retries: int = Field(default=5, ge=0)
-    retry_multiplier: float = Field(default=8.0, ge=0)
-    retry_min_wait: int = Field(default=8, ge=0)
-    retry_max_wait: int = Field(default=64, ge=0)
+    num_retries: int = Field(
+        default=5,
+        ge=0,
+        json_schema_extra=field_meta(SettingProminence.MINOR),
+    )
+    retry_multiplier: float = Field(
+        default=8.0,
+        ge=0,
+        json_schema_extra=field_meta(SettingProminence.MINOR),
+    )
+    retry_min_wait: int = Field(
+        default=8,
+        ge=0,
+        json_schema_extra=field_meta(SettingProminence.MINOR),
+    )
+    retry_max_wait: int = Field(
+        default=64,
+        ge=0,
+        json_schema_extra=field_meta(SettingProminence.MINOR),
+    )
 
     timeout: int | None = Field(
         default=300,
         ge=0,
         description="HTTP timeout in seconds. Default is 300s (5 minutes). "
         "Set to None to disable timeout (not recommended for production).",
+        json_schema_extra=field_meta(SettingProminence.MINOR),
     )
 
     max_message_chars: int = Field(
         default=30_000,
         ge=1,
         description="Approx max chars in each event/content sent to the LLM.",
+        json_schema_extra=field_meta(SettingProminence.MINOR),
     )
 
     temperature: float | None = Field(
@@ -232,8 +259,13 @@ class LLM(BaseModel, RetryMixin, NonNativeToolCallingMixin):
             "Defaults to None (uses provider default). "
             "Set to a value between 0 and 1 to control diversity of outputs."
         ),
+        json_schema_extra=field_meta(SettingProminence.MINOR),
     )
-    top_k: float | None = Field(default=None, ge=0)
+    top_k: float | None = Field(
+        default=None,
+        ge=0,
+        json_schema_extra=field_meta(SettingProminence.MINOR),
+    )
 
     max_input_tokens: int | None = Field(
         default=None,
@@ -241,6 +273,7 @@ class LLM(BaseModel, RetryMixin, NonNativeToolCallingMixin):
         description="The maximum number of input tokens. "
         "Note that this is currently unused, and the value at runtime is actually"
         " the total tokens in OpenAI (e.g. 128,000 tokens for GPT-4).",
+        json_schema_extra=field_meta(SettingProminence.MINOR),
     )
     max_output_tokens: int | None = Field(
         default=None,
@@ -259,20 +292,24 @@ class LLM(BaseModel, RetryMixin, NonNativeToolCallingMixin):
             "capability detection. If not provided, the 'model' field "
             "will be used for capability lookups."
         ),
+        json_schema_extra=field_meta(SettingProminence.MINOR),
     )
     extra_headers: dict[str, str] | None = Field(
         default=None,
         description="Optional HTTP headers to forward to LiteLLM requests.",
+        json_schema_extra=field_meta(SettingProminence.MINOR),
     )
     input_cost_per_token: float | None = Field(
         default=None,
         ge=0,
         description="The cost per input token. This will available in logs for user.",
+        json_schema_extra=field_meta(SettingProminence.MINOR),
     )
     output_cost_per_token: float | None = Field(
         default=None,
         ge=0,
         description="The cost per output token. This will available in logs for user.",
+        json_schema_extra=field_meta(SettingProminence.MINOR),
     )
     ollama_base_url: str | None = Field(
         default=None,
@@ -285,12 +322,17 @@ class LLM(BaseModel, RetryMixin, NonNativeToolCallingMixin):
             "When enabled, the provided `on_token` callback in .completions "
             "and .responses will be invoked for each chunk of tokens."
         ),
+        json_schema_extra=field_meta(SettingProminence.MINOR),
     )
-    drop_params: bool = Field(default=True)
+    drop_params: bool = Field(
+        default=True,
+        json_schema_extra=field_meta(SettingProminence.MINOR),
+    )
     modify_params: bool = Field(
         default=True,
         description="Modify params allows litellm to do transformations like adding"
         " a default message, when a message is empty.",
+        json_schema_extra=field_meta(SettingProminence.MINOR),
     )
     disable_vision: bool | None = Field(
         default=None,
@@ -300,27 +342,33 @@ class LLM(BaseModel, RetryMixin, NonNativeToolCallingMixin):
     disable_stop_word: bool | None = Field(
         default=False,
         description="Disable using of stop word.",
+        json_schema_extra=field_meta(SettingProminence.MINOR),
     )
     caching_prompt: bool = Field(
         default=True,
         description="Enable caching of prompts.",
+        json_schema_extra=field_meta(SettingProminence.MINOR),
     )
     log_completions: bool = Field(
         default=False,
         description="Enable logging of completions.",
+        json_schema_extra=field_meta(SettingProminence.MINOR),
     )
     log_completions_folder: str = Field(
         default=os.path.join(ENV_LOG_DIR, "completions"),
         description="The folder to log LLM completions to. "
         "Required if log_completions is True.",
+        json_schema_extra=field_meta(SettingProminence.MINOR),
     )
     custom_tokenizer: str | None = Field(
         default=None,
         description="A custom tokenizer to use for token counting.",
+        json_schema_extra=field_meta(SettingProminence.MINOR),
     )
     native_tool_calling: bool = Field(
         default=True,
         description="Whether to use native tool calling.",
+        json_schema_extra=field_meta(SettingProminence.MINOR),
     )
     force_string_serializer: bool | None = Field(
         default=None,
@@ -330,6 +378,7 @@ class LLM(BaseModel, RetryMixin, NonNativeToolCallingMixin):
             "Useful for providers that do not support list content, "
             "like HuggingFace and Groq."
         ),
+        json_schema_extra=field_meta(SettingProminence.MINOR),
     )
     reasoning_effort: Literal["low", "medium", "high", "xhigh", "none"] | None = Field(
         default="high",
@@ -343,11 +392,13 @@ class LLM(BaseModel, RetryMixin, NonNativeToolCallingMixin):
         description="The level of detail for reasoning summaries. "
         "This is a string that can be one of 'auto', 'concise', or 'detailed'. "
         "Requires verified OpenAI organization. Only sent when explicitly set.",
+        json_schema_extra=field_meta(SettingProminence.MINOR),
     )
     enable_encrypted_reasoning: bool = Field(
         default=True,
         description="If True, ask for ['reasoning.encrypted_content'] "
         "in Responses API include.",
+        json_schema_extra=field_meta(SettingProminence.MINOR),
     )
     # Prompt cache retention is filtered per model features in chat options.
     prompt_cache_retention: str | None = Field(
@@ -357,15 +408,18 @@ class LLM(BaseModel, RetryMixin, NonNativeToolCallingMixin):
             "(GPT-5+ and GPT-4.1, excluding Azure deployments); explicitly "
             "stripped for all others."
         ),
+        json_schema_extra=field_meta(SettingProminence.MINOR),
     )
     extended_thinking_budget: int | None = Field(
         default=200_000,
         description="The budget tokens for extended thinking, "
         "supported by Anthropic models.",
+        json_schema_extra=field_meta(SettingProminence.MINOR),
     )
     seed: int | None = Field(
         default=None,
         description="The seed to use for random number generation.",
+        json_schema_extra=field_meta(SettingProminence.MINOR),
     )
     # REMOVE_AT: 1.15.0 - Remove this field and its handling in chat_options.py
     safety_settings: list[dict[str, str]] | None = Field(
@@ -377,6 +431,7 @@ class LLM(BaseModel, RetryMixin, NonNativeToolCallingMixin):
             "consumer-facing content moderation, which is not relevant for "
             "coding agents."
         ),
+        json_schema_extra=field_meta(SettingProminence.MINOR),
     )
     usage_id: str = Field(
         default="default",
@@ -385,6 +440,7 @@ class LLM(BaseModel, RetryMixin, NonNativeToolCallingMixin):
             "Unique usage identifier for the LLM. Used for registry lookups, "
             "telemetry, and spend tracking."
         ),
+        json_schema_extra=field_meta(SettingProminence.MINOR),
     )
     litellm_extra_body: dict[str, Any] = Field(
         default_factory=dict,
@@ -402,6 +458,7 @@ class LLM(BaseModel, RetryMixin, NonNativeToolCallingMixin):
             "- Proxy routing: {'trace_version': '1.0.0', 'tags': ['agent:my-agent']} "
             "- vLLM features: {'return_token_ids': True}"
         ),
+        json_schema_extra=field_meta(SettingProminence.MINOR),
     )
 
     fallback_strategy: FallbackStrategy | None = Field(

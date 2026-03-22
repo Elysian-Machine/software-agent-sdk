@@ -1,11 +1,10 @@
 from __future__ import annotations
 
-from collections.abc import Callable
 from enum import Enum
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, Literal, get_args, get_origin
 
-from pydantic import BaseModel, Field, SecretStr, model_validator
+from pydantic import BaseModel, Field, SecretStr
 from pydantic.fields import FieldInfo
 
 from openhands.sdk.context.agent_context import AgentContext
@@ -213,25 +212,6 @@ class VerificationSettings(BaseModel):
         },
     )
 
-    # Backward-compatible accessors so ``settings.verification.enabled``
-    # etc. keep working for code that used the old CriticSettings shape.
-    @property
-    def enabled(self) -> bool:
-        return self.critic_enabled
-
-    @property
-    def mode(self) -> CriticMode:
-        return self.critic_mode
-
-    @property
-    def threshold(self) -> float:
-        return self.critic_threshold
-
-
-# Keep old names importable for backward compatibility.
-CriticSettings = VerificationSettings
-SecuritySettings = VerificationSettings
-
 
 def _default_llm_settings() -> LLM:
     model = LLM.model_fields["model"].get_default()
@@ -239,29 +219,7 @@ def _default_llm_settings() -> LLM:
     return LLM(model=model)
 
 
-# ---------------------------------------------------------------------------
-# Schema versioning
-# ---------------------------------------------------------------------------
-# Bump CURRENT_SCHEMA_VERSION whenever a breaking change is made to
-# AgentSettings serialization (field renames, restructured nesting, etc.).
-# Adding a new field with a default does NOT require a bump.
-#
-# For each bump, add a migration function to _SCHEMA_MIGRATIONS that
-# transforms a raw dict from version N to N+1.
-
-CURRENT_SCHEMA_VERSION = 1
-
-_SCHEMA_MIGRATIONS: dict[int, Callable[[dict[str, Any]], dict[str, Any]]] = {
-    # Example for a future v1 → v2 migration:
-    # 1: _migrate_v1_to_v2,
-}
-
-
 class AgentSettings(BaseModel):
-    schema_version: int = Field(
-        default=CURRENT_SCHEMA_VERSION,
-        description="Schema version for backward-compatible deserialization.",
-    )
     agent: str = Field(
         default="CodeActAgent",
         description="Agent class to use.",
@@ -320,30 +278,6 @@ class AgentSettings(BaseModel):
             ).model_dump()
         },
     )
-
-    @model_validator(mode="before")
-    @classmethod
-    def _migrate_schema(cls, data: Any) -> Any:
-        """Run sequential migrations to bring old data up to current."""
-        if not isinstance(data, dict):
-            return data
-        v = data.get("schema_version", 1)
-        while v < CURRENT_SCHEMA_VERSION:
-            migrate = _SCHEMA_MIGRATIONS.get(v)
-            if migrate is None:
-                raise ValueError(f"No migration from schema version {v} to {v + 1}")
-            data = migrate(data)
-            v = data.get("schema_version", v + 1)
-        return data
-
-    # Backward-compatible accessors.
-    @property
-    def critic(self) -> VerificationSettings:
-        return self.verification
-
-    @property
-    def security(self) -> VerificationSettings:
-        return self.verification
 
     @classmethod
     def export_schema(cls) -> SettingsSchema:
@@ -447,82 +381,6 @@ def settings_metadata(field: FieldInfo) -> SettingsFieldMetadata | None:
 _GENERAL_SECTION_KEY = "general"
 _GENERAL_SECTION_LABEL = "General"
 
-# Keep LLM settings metadata outside the public ``LLM`` field definitions so
-# the settings schema does not mutate the SDK's public model signatures.
-_LLM_CRITICAL_FIELDS = frozenset(
-    {
-        "model",
-        "api_key",
-        "base_url",
-    }
-)
-
-_LLM_MINOR_FIELDS = frozenset(
-    {
-        "openrouter_site_url",
-        "openrouter_app_name",
-        "num_retries",
-        "retry_multiplier",
-        "retry_min_wait",
-        "retry_max_wait",
-        "timeout",
-        "max_message_chars",
-        "top_p",
-        "top_k",
-        "max_input_tokens",
-        "model_canonical_name",
-        "extra_headers",
-        "input_cost_per_token",
-        "output_cost_per_token",
-        "stream",
-        "drop_params",
-        "modify_params",
-        "disable_stop_word",
-        "caching_prompt",
-        "log_completions",
-        "log_completions_folder",
-        "custom_tokenizer",
-        "native_tool_calling",
-        "force_string_serializer",
-        "reasoning_summary",
-        "enable_encrypted_reasoning",
-        "prompt_cache_retention",
-        "extended_thinking_budget",
-        "seed",
-        "safety_settings",
-        "usage_id",
-        "litellm_extra_body",
-    }
-)
-
-_LLM_MAJOR_FIELDS = frozenset(
-    {
-        "api_version",
-        "aws_access_key_id",
-        "aws_secret_access_key",
-        "aws_region_name",
-        "temperature",
-        "max_output_tokens",
-        "ollama_base_url",
-        "disable_vision",
-        "reasoning_effort",
-    }
-)
-
-
-def _fallback_settings_metadata(
-    model: type[BaseModel], field_name: str
-) -> SettingsFieldMetadata | None:
-    if model is not LLM:
-        return None
-    if field_name in _LLM_CRITICAL_FIELDS:
-        return SettingsFieldMetadata(prominence=SettingProminence.CRITICAL)
-    if field_name in _LLM_MINOR_FIELDS:
-        return SettingsFieldMetadata(prominence=SettingProminence.MINOR)
-    if field_name in _LLM_MAJOR_FIELDS:
-        return SettingsFieldMetadata(prominence=SettingProminence.MAJOR)
-    return None
-
 
 def export_settings_schema(model: type[BaseModel]) -> SettingsSchema:
     sections: list[SettingsSectionSchema] = []
@@ -550,8 +408,6 @@ def export_settings_schema(model: type[BaseModel]) -> SettingsSchema:
                 if nested_field.exclude:
                     continue
                 metadata = settings_metadata(nested_field)
-                if metadata is None:
-                    metadata = _fallback_settings_metadata(nested_model, nested_key)
                 default_value = None
                 if isinstance(section_default, BaseModel):
                     default_value = getattr(section_default, nested_key)
