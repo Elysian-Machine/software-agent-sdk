@@ -1,3 +1,4 @@
+from fastmcp.mcp_config import MCPConfig
 from pydantic import SecretStr
 
 from openhands.sdk import LLM, Agent, AgentSettings, SettingProminence, Tool
@@ -117,6 +118,36 @@ def test_create_agent_uses_settings_llm_and_tools() -> None:
     assert isinstance(agent, Agent)
     assert agent.llm is llm
     assert agent.tools == tools
+
+
+def test_agent_settings_validates_mcp_config_as_typed_model() -> None:
+    settings = AgentSettings.model_validate(
+        {
+            "mcp_config": {
+                "mcpServers": {
+                    "fetch": {"command": "uvx", "args": ["mcp-server-fetch"]}
+                }
+            }
+        }
+    )
+
+    assert isinstance(settings.mcp_config, MCPConfig)
+    assert settings.model_dump()["mcp_config"] == {
+        "mcpServers": {"fetch": {"command": "uvx", "args": ["mcp-server-fetch"]}}
+    }
+
+
+def test_create_agent_serializes_typed_mcp_config_compactly() -> None:
+    mcp_config = MCPConfig.model_validate(
+        {"mcpServers": {"fetch": {"command": "uvx", "args": ["mcp-server-fetch"]}}}
+    )
+    settings = AgentSettings(mcp_config=mcp_config)
+
+    agent = settings.create_agent()
+
+    assert agent.mcp_config == {
+        "mcpServers": {"fetch": {"command": "uvx", "args": ["mcp-server-fetch"]}}
+    }
 
 
 def test_create_agent_builds_condenser_when_enabled() -> None:

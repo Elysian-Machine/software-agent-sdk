@@ -4,7 +4,8 @@ from enum import Enum
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, Literal, get_args, get_origin
 
-from pydantic import BaseModel, Field, SecretStr
+from fastmcp.mcp_config import MCPConfig
+from pydantic import BaseModel, Field, SecretStr, field_serializer, field_validator
 from pydantic.fields import FieldInfo
 
 from openhands.sdk.context.agent_context import AgentContext
@@ -244,8 +245,8 @@ class AgentSettings(BaseModel):
         default_factory=list,
         description="Tools available to the agent.",
     )
-    mcp_config: dict[str, Any] = Field(
-        default_factory=dict,
+    mcp_config: MCPConfig | None = Field(
+        default=None,
         description="MCP server configuration for the agent.",
         json_schema_extra={
             SETTINGS_METADATA_KEY: SettingsFieldMetadata(
@@ -279,6 +280,19 @@ class AgentSettings(BaseModel):
         },
     )
 
+    @field_validator("mcp_config", mode="before")
+    @classmethod
+    def _normalize_empty_mcp_config(cls, value: Any) -> Any:
+        if value in (None, {}):
+            return None
+        return value
+
+    @field_serializer("mcp_config")
+    def _serialize_mcp_config(self, value: MCPConfig | None) -> dict[str, Any]:
+        if value is None:
+            return {}
+        return value.model_dump(exclude_none=True, exclude_defaults=True)
+
     @classmethod
     def export_schema(cls) -> SettingsSchema:
         """Export a structured schema describing configurable agent settings."""
@@ -300,7 +314,7 @@ class AgentSettings(BaseModel):
         return Agent(
             llm=self.llm,
             tools=self.tools,
-            mcp_config=self.mcp_config,
+            mcp_config=self._serialize_mcp_config(self.mcp_config),
             agent_context=self.agent_context,
             condenser=self.build_condenser(self.llm),
             critic=self.build_critic(),
