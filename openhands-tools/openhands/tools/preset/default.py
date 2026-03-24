@@ -55,11 +55,11 @@ def get_default_tools(
         Tool(name=TaskTrackerTool.name),
         Tool(name=TaskToolSet.name),
     ]
-    _ = register_builtins_agents(enable_browser=enable_browser)
     if enable_browser:
         from openhands.tools.browser_use import BrowserToolSet
 
         tools.append(Tool(name=BrowserToolSet.name))
+    _ = register_builtins_agents(enable_browser=enable_browser)
     return tools
 
 
