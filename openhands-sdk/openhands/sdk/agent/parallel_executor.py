@@ -12,8 +12,8 @@ while tools touching *different* resources can run concurrently.
    When ``tool_concurrency_limit > 1``, multiple tools run in parallel
    threads sharing the same ``conversation`` object. The executor uses
    ``ResourceLockManager`` to serialize access to shared resources, but
-   tools must correctly implement ``get_resource_keys()`` for this to
-   be effective.
+   tools must correctly implement ``declared_resources()`` for this
+   to be effective.
 """
 
 from __future__ import annotations
@@ -30,7 +30,7 @@ from openhands.sdk.logger import get_logger
 if TYPE_CHECKING:
     from openhands.sdk.event.base import Event
     from openhands.sdk.event.llm_convertible import ActionEvent
-    from openhands.sdk.tool.tool import ToolDefinition
+    from openhands.sdk.tool.tool import DeclaredResources, ToolDefinition
 
 logger = get_logger(__name__)
 
@@ -73,14 +73,18 @@ class ParallelToolExecutor:
         if not action_events:
             return []
 
+        def _resolve(ae: ActionEvent) -> ToolDefinition | None:
+            return tools.get(ae.tool_name) if tools else None
+
         if len(action_events) == 1 or self._max_workers == 1:
             return [
-                self._run_safe(action, tool_runner, tools) for action in action_events
+                self._run_safe(action, tool_runner, _resolve(action))
+                for action in action_events
             ]
 
         with ThreadPoolExecutor(max_workers=self._max_workers) as executor:
             futures = [
-                executor.submit(self._run_safe, action, tool_runner, tools)
+                executor.submit(self._run_safe, action, tool_runner, _resolve(action))
                 for action in action_events
             ]
 
@@ -90,7 +94,7 @@ class ParallelToolExecutor:
         self,
         action: ActionEvent,
         tool_runner: Callable[[ActionEvent], list[Event]],
-        tools: dict[str, ToolDefinition] | None = None,
+        tool: ToolDefinition | None = None,
     ) -> list[Event]:
         """Run tool_runner with resource locking.
 
@@ -103,28 +107,13 @@ class ParallelToolExecutor:
         - ``declared=True``, keys present → lock those resources.
         """
         try:
-            tool = tools.get(action.tool_name) if tools else None
-
-            # No tool metadata available → skip locking
             if tool is None:
                 return tool_runner(action)
 
-            # Derive lock strategy from declared_resources
-            parsed_action = action.action
-            if parsed_action is None:
-                resources = None
-            else:
-                resources = tool.declared_resources(parsed_action)
-
-            if resources is None or not resources.declared:
-                # Tool doesn't declare resources → tool-wide mutex
-                lock_keys = [f"tool:{tool.name}"]
-            elif not resources.keys:
-                # Tool declares no shared resources → safe to skip
+            resources = self._extract_declared_resources(action, tool)
+            lock_keys = self._resolve_lock_keys(resources, tool)
+            if not lock_keys:
                 return tool_runner(action)
-            else:
-                lock_keys = list(resources.keys)
-
             with self._lock_manager.lock(*lock_keys):
                 return tool_runner(action)
 
@@ -149,3 +138,25 @@ class ParallelToolExecutor:
                     tool_call_id=action.tool_call_id,
                 )
             ]
+
+    @staticmethod
+    def _extract_declared_resources(
+        action: ActionEvent,
+        tool: ToolDefinition,
+    ) -> DeclaredResources | None:
+        """Call ``tool.declared_resources()`` if the action is parsed."""
+        parsed_action = action.action
+        return tool.declared_resources(parsed_action) if parsed_action else None
+
+    @staticmethod
+    def _resolve_lock_keys(
+        resources: DeclaredResources | None,
+        tool: ToolDefinition,
+    ) -> list[str]:
+        """Turn declared resources into lock keys.
+
+        Returns an empty list when no locking is needed.
+        """
+        if resources is None or not resources.declared:
+            return [f"tool:{tool.name}"]
+        return list(resources.keys)
