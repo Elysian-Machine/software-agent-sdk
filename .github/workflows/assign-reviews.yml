@@ -142,11 +142,14 @@ jobs:
               run: |
                   curl -sSf -H "Authorization: token $GITHUB_TOKEN" https://api.github.com/user | head -20
 
-            - name: Print last 4 of LLM_API_KEY
+            - name: Check LLM API key info
               env:
                   LLM_API_KEY: ${{ secrets.LLM_API_KEY }}
               run: |
                   echo "LLM_API_KEY ends with: ...${LLM_API_KEY: -4}"
+                  echo "Fetching key info from LiteLLM proxy..."
+                  curl -sSf -H "Authorization: Bearer $LLM_API_KEY" \
+                    "$LLM_BASE_URL/key/info" | python3 -m json.tool
 
             - name: Checkout repository
               uses: actions/checkout@v5
