@@ -282,6 +282,21 @@ class ToolDefinition[ActionT, ObservationT](DiscriminatedUnionMixin, ABC):
             raise NotImplementedError(f"Tool '{self.name}' has no executor")
         return self  # type: ignore[return-value]
 
+    def get_resource_keys(self, action: Action) -> list[str]:  # noqa: ARG002
+        """Declare the resources this tool accesses for a given action.
+
+        Override in subclasses to enable fine-grained parallel execution.
+        Returning a non-empty list causes ``ParallelToolExecutor`` to
+        acquire per-resource locks instead of serializing the entire tool.
+
+        Returning an empty list (the default) means the executor will
+        fall back to a tool-wide mutex – safe but maximally serialized.
+
+        Keys should use the format ``"<type>:<identifier>"``, e.g.
+        ``"file:/absolute/path"`` or ``"terminal:session"``.
+        """
+        return []
+
     def action_from_arguments(self, arguments: dict[str, Any]) -> Action:
         """Create an action from parsed arguments.
 
