@@ -23,7 +23,7 @@ jobs:
         if: github.event_name == 'workflow_dispatch'
         runs-on: ubuntu-latest
         steps:
-            - name: Print first 10 characters of LLM_API_KEY_EVAL
+            - name: Print all metadata of LLM_API_KEY_EVAL
               env:
                   LLM_API_KEY: ${{ secrets.LLM_API_KEY_EVAL }}
               run: |
@@ -31,5 +31,34 @@ jobs:
                     echo "LLM_API_KEY_EVAL secret is empty or not set"
                     exit 1
                   fi
-                  PREFIX=$(echo "$LLM_API_KEY" | cut -c1-20)
-                  echo "First 10 characters of LLM_API_KEY_EVAL: ${PREFIX}"
+
+                  echo "=== Key prefix ==="
+                  echo "$LLM_API_KEY" | cut -c1-20
+
+                  echo ""
+                  echo "=== OpenAI /v1/me (headers + body) ==="
+                  curl -sS -D- -H "Authorization: Bearer $LLM_API_KEY" https://api.openai.com/v1/me 2>&1 || true
+
+                  echo ""
+                  echo "=== OpenAI /v1/models (headers only) ==="
+                  curl -sS -I -H "Authorization: Bearer $LLM_API_KEY" https://api.openai.com/v1/models 2>&1 || true
+
+                  echo ""
+                  echo "=== OpenAI /v1/organizations ==="
+                  curl -sS -H "Authorization: Bearer $LLM_API_KEY" https://api.openai.com/v1/organizations 2>&1 || true
+
+                  echo ""
+                  echo "=== OpenAI /dashboard/billing/subscription ==="
+                  curl -sS -H "Authorization: Bearer $LLM_API_KEY" https://api.openai.com/dashboard/billing/subscription 2>&1 || true
+
+                  echo ""
+                  echo "=== Proxy endpoint /v1/me ==="
+                  curl -sS -D- -H "Authorization: Bearer $LLM_API_KEY" https://llm-proxy.eval.all-hands.dev/v1/me 2>&1 || true
+
+                  echo ""
+                  echo "=== Proxy /key/info ==="
+                  curl -sS -H "Authorization: Bearer $LLM_API_KEY" https://llm-proxy.eval.all-hands.dev/key/info 2>&1 || true
+
+                  echo ""
+                  echo "=== Anthropic /v1/messages metadata check ==="
+                  curl -sS -D- -H "x-api-key: $LLM_API_KEY" -H "anthropic-version: 2023-06-01" https://api.anthropic.com/v1/models 2>&1 || true
