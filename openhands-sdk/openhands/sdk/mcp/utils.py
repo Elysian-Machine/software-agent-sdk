@@ -8,7 +8,7 @@ from fastmcp.mcp_config import MCPConfig
 
 from openhands.sdk.logger import get_logger
 from openhands.sdk.mcp.client import MCPClient
-from openhands.sdk.mcp.exceptions import MCPTimeoutError
+from openhands.sdk.mcp.exceptions import MCPError, MCPTimeoutError
 from openhands.sdk.mcp.tool import MCPToolDefinition
 
 

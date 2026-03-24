@@ -210,16 +210,18 @@ async def events_socket(
             except Exception as e:
                 logger.exception("error_in_subscription", stack_info=True)
 
-                # Handle MCP errors specially - send error event to client before closing
+                # For MCP errors send error event to client before closing
                 if isinstance(e, MCPError):
-                    error_event = ConversationErrorEvent(
-                        code="MCP_CONNECTION_ERROR",
-                        detail=str(e),
-                    )
                     try:
+                        error_event = ConversationErrorEvent(
+                            source="environment",
+                            code="MCP_CONNECTION_ERROR",
+                            detail=str(e),
+                        )
                         await _send_event(error_event, websocket)
                     except Exception:
                         pass  # Don't fail even if we can't send the error event
+                    raise
 
                 # For critical errors that indicate the websocket is broken, exit
                 if isinstance(e, (RuntimeError, ConnectionError)):
