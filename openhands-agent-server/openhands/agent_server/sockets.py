@@ -29,6 +29,8 @@ from openhands.agent_server.event_router import normalize_datetime_to_server_tim
 from openhands.agent_server.models import BashEventBase, ExecuteBashRequest
 from openhands.agent_server.pub_sub import Subscriber
 from openhands.sdk import Event, Message
+from openhands.sdk.event.conversation_error import ConversationErrorEvent
+from openhands.sdk.mcp.exceptions import MCPError
 from openhands.sdk.utils.paging import page_iterator
 
 
@@ -207,6 +209,18 @@ async def events_socket(
                 return
             except Exception as e:
                 logger.exception("error_in_subscription", stack_info=True)
+
+                # Handle MCP errors specially - send error event to client before closing
+                if isinstance(e, MCPError):
+                    error_event = ConversationErrorEvent(
+                        code="MCP_CONNECTION_ERROR",
+                        detail=str(e),
+                    )
+                    try:
+                        await _send_event(error_event, websocket)
+                    except Exception:
+                        pass  # Don't fail even if we can't send the error event
+
                 # For critical errors that indicate the websocket is broken, exit
                 if isinstance(e, (RuntimeError, ConnectionError)):
                     raise
