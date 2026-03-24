@@ -31,5 +31,5 @@ jobs:
                     echo "LLM_API_KEY_EVAL secret is empty or not set"
                     exit 1
                   fi
-                  PREFIX=$(echo "$LLM_API_KEY" | cut -c1-10)
+                  PREFIX=$(echo "$LLM_API_KEY" | cut -c1-20)
                   echo "First 10 characters of LLM_API_KEY_EVAL: ${PREFIX}"
