@@ -13,9 +13,23 @@ from __future__ import annotations
 import threading
 from collections.abc import Generator
 from contextlib import contextmanager
-from typing import ClassVar
+from typing import Final
 
 from openhands.sdk.conversation.fifo_lock import FIFOLock
+
+
+DEFAULT_TIMEOUTS: Final[dict[str, float]] = {
+    "file": 30.0,
+    "terminal": 300.0,
+    "browser": 300.0,
+    "mcp": 300.0,
+    "tool": 60.0,
+}
+_DEFAULT_TIMEOUT: Final[float] = 30.0
+
+
+class ResourceLockTimeout(TimeoutError):
+    """A lock could not be acquired within the allowed timeout."""
 
 
 class ResourceLockManager:
@@ -29,45 +43,54 @@ class ResourceLockManager:
             ...
     """
 
-    DEFAULT_TIMEOUTS: ClassVar[dict[str, float]] = {
-        "file:": 30.0,
-        "terminal:": 300.0,
-        "browser:": 300.0,
-        "mcp:": 300.0,
-        "tool:": 60.0,
-    }
-
     def __init__(
         self,
         timeouts: dict[str, float] | None = None,
     ) -> None:
         self._locks: dict[str, FIFOLock] = {}
         self._meta_lock = threading.Lock()
-        self._timeouts = timeouts or self.DEFAULT_TIMEOUTS
+        self._refcounts: dict[str, int] = {}
+        self._timeouts = timeouts or DEFAULT_TIMEOUTS
 
     def _get_lock(self, key: str) -> FIFOLock:
-        """Return (or lazily create) the FIFOLock for *key*."""
+        """Return (or lazily create) the FIFOLock for *key*.
+
+        Also increments the reference count so the lock is not cleaned
+        up while callers still hold or wait on it.
+        """
         with self._meta_lock:
             if key not in self._locks:
                 self._locks[key] = FIFOLock()
+            self._refcounts[key] = self._refcounts.get(key, 0) + 1
             return self._locks[key]
+
+    def _release_lock(self, key: str) -> None:
+        """Release the FIFOLock for *key* and clean up if unreferenced."""
+        with self._meta_lock:
+            lock = self._locks.get(key)
+            if lock is None:
+                return
+            lock.release()
+            self._refcounts[key] -= 1
+            if self._refcounts[key] == 0 and not lock.locked():
+                del self._locks[key]
+                del self._refcounts[key]
 
     def _get_timeout(self, key: str) -> float:
         """Return the timeout for a resource key based on its prefix."""
-        for prefix, timeout in self._timeouts.items():
-            if key.startswith(prefix):
-                return timeout
-        return 30.0
+        prefix = key.split(":", 1)[0] if ":" in key else key
+        return self._timeouts.get(prefix, _DEFAULT_TIMEOUT)
 
     @contextmanager
     def lock(self, *resource_keys: str) -> Generator[None]:
-        """Acquire locks for all *resource_keys* in sorted order, then release.
+        """Acquire locks for all *resource_keys* in sorted order.
 
         Sorted acquisition prevents deadlocks when two threads need
         overlapping sets of resources.
 
         Raises:
-            TimeoutError: If a lock cannot be acquired within its timeout.
+            ResourceLockTimeout: If a lock cannot be acquired within
+                its timeout.
         """
         sorted_keys = sorted(set(resource_keys))
         acquired: list[str] = []
@@ -75,11 +98,17 @@ class ResourceLockManager:
             for key in sorted_keys:
                 timeout = self._get_timeout(key)
                 if not self._get_lock(key).acquire(timeout=timeout):
-                    raise TimeoutError(
+                    # _get_lock incremented refcount; undo it
+                    with self._meta_lock:
+                        self._refcounts[key] -= 1
+                        if self._refcounts[key] == 0 and not self._locks[key].locked():
+                            del self._locks[key]
+                            del self._refcounts[key]
+                    raise ResourceLockTimeout(
                         f"Could not acquire lock for '{key}' within {timeout}s"
                     )
                 acquired.append(key)
             yield
         finally:
             for key in reversed(acquired):
-                self._locks[key].release()
+                self._release_lock(key)

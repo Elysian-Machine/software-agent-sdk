@@ -1,6 +1,9 @@
+from __future__ import annotations
+
 import json
 from collections.abc import Callable
 from dataclasses import dataclass, field
+from typing import TYPE_CHECKING
 
 from pydantic import PrivateAttr, ValidationError, model_validator
 
@@ -60,8 +63,11 @@ from openhands.sdk.security.llm_analyzer import LLMSecurityAnalyzer
 from openhands.sdk.tool import (
     Action,
     Observation,
-    ToolDefinition,
 )
+
+
+if TYPE_CHECKING:
+    from openhands.sdk.tool import ToolDefinition
 from openhands.sdk.tool.builtins import (
     FinishAction,
     FinishTool,
@@ -129,7 +135,7 @@ class _ActionBatch:
         executor: ParallelToolExecutor,
         tool_runner: Callable[[ActionEvent], list[Event]],
         tools: dict[str, ToolDefinition] | None = None,
-    ) -> "_ActionBatch":
+    ) -> _ActionBatch:
         """Truncate, partition blocked actions, execute the rest, return the batch."""
         action_events, has_finish = cls._truncate_at_finish(action_events)
 

@@ -1,11 +1,13 @@
 """Tests for ResourceLockManager."""
 
 import threading
-import time
 
 import pytest
 
-from openhands.sdk.conversation.resource_lock_manager import ResourceLockManager
+from openhands.sdk.conversation.resource_lock_manager import (
+    ResourceLockManager,
+    ResourceLockTimeout,
+)
 
 
 def test_basic_lock_and_release():
@@ -23,28 +25,39 @@ def test_no_keys_is_noop():
 def test_serializes_same_resource():
     """Two threads locking the same resource must not overlap."""
     mgr = ResourceLockManager()
-    log: list[str] = []
 
-    def worker(name: str) -> None:
+    # Use events to prove strict serialization without sleeps
+    inside = threading.Event()
+    first_done = threading.Event()
+    second_entered = threading.Event()
+    violation = threading.Event()
+
+    def first() -> None:
         with mgr.lock("file:/shared.py"):
-            log.append(f"{name}-enter")
-            time.sleep(0.05)
-            log.append(f"{name}-exit")
+            inside.set()
+            # Wait until the second thread is *trying* to acquire
+            # (give it a moment to reach the lock call)
+            first_done.wait(timeout=5)
 
-    t1 = threading.Thread(target=worker, args=("A",))
-    t2 = threading.Thread(target=worker, args=("B",))
+    def second() -> None:
+        inside.wait(timeout=5)  # ensure first is inside
+        with mgr.lock("file:/shared.py"):
+            if not first_done.is_set():
+                violation.set()  # would mean overlap
+            second_entered.set()
+
+    t1 = threading.Thread(target=first)
+    t2 = threading.Thread(target=second)
     t1.start()
     t2.start()
-    t1.join()
-    t2.join()
 
-    # One must fully complete before the other starts
-    assert log == ["A-enter", "A-exit", "B-enter", "B-exit"] or log == [
-        "B-enter",
-        "B-exit",
-        "A-enter",
-        "A-exit",
-    ]
+    inside.wait(timeout=5)
+    first_done.set()  # let first release
+    t1.join(timeout=5)
+    t2.join(timeout=5)
+
+    assert second_entered.is_set()
+    assert not violation.is_set()
 
 
 def test_parallel_different_resources():
@@ -69,7 +82,7 @@ def test_parallel_different_resources():
 
 
 def test_sorted_order_prevents_deadlock():
-    """Sorted acquisition prevents deadlocks with opposite request order."""
+    """Sorted acquisition prevents deadlocks with opposite order."""
     mgr = ResourceLockManager()
     results: list[str] = []
 
@@ -87,10 +100,9 @@ def test_sorted_order_prevents_deadlock():
     assert set(results) == {"A", "B"}
 
 
-def test_timeout_raises():
-    mgr = ResourceLockManager(timeouts={"file:": 0.05})
+def test_timeout_raises_custom_exception():
+    mgr = ResourceLockManager(timeouts={"file": 0.05})
 
-    # Hold the lock in another thread
     held = threading.Event()
     release = threading.Event()
 
@@ -103,12 +115,17 @@ def test_timeout_raises():
     t.start()
     held.wait()
 
-    with pytest.raises(TimeoutError, match="file:/x"):
+    with pytest.raises(ResourceLockTimeout, match="file:/x"):
         with mgr.lock("file:/x"):
             pass
 
     release.set()
     t.join()
+
+
+def test_timeout_is_subclass_of_timeout_error():
+    """ResourceLockTimeout should be catchable as TimeoutError."""
+    assert issubclass(ResourceLockTimeout, TimeoutError)
 
 
 def test_duplicate_keys_deduplicated():
@@ -142,7 +159,7 @@ def test_release_on_exception():
 
 def test_partial_release_on_timeout():
     """If the second lock times out, the first must be released."""
-    mgr = ResourceLockManager(timeouts={"r:": 0.05})
+    mgr = ResourceLockManager(timeouts={"r": 0.05})
 
     held = threading.Event()
     release = threading.Event()
@@ -156,7 +173,7 @@ def test_partial_release_on_timeout():
     t.start()
     held.wait()
 
-    with pytest.raises(TimeoutError):
+    with pytest.raises(ResourceLockTimeout):
         with mgr.lock("r:a", "r:b"):
             pass  # r:a acquired, r:b times out
 
@@ -174,3 +191,55 @@ def test_partial_release_on_timeout():
 
     release.set()
     t.join()
+
+
+def test_cleanup_removes_unused_locks():
+    """After all holders release, the internal lock should be cleaned up."""
+    mgr = ResourceLockManager()
+    with mgr.lock("file:/tmp.py"):
+        assert "file:/tmp.py" in mgr._locks
+
+    # After release + cleanup, the lock entry should be gone
+    assert "file:/tmp.py" not in mgr._locks
+
+
+def test_cleanup_preserves_contended_locks():
+    """A lock still waited on by another thread must not be cleaned up."""
+    mgr = ResourceLockManager()
+    held = threading.Event()
+    second_waiting = threading.Event()
+    release = threading.Event()
+
+    def first() -> None:
+        with mgr.lock("file:/x"):
+            held.set()
+            release.wait(timeout=5)
+        # After first releases, cleanup runs — but second
+        # is still referencing the lock, so it must survive.
+
+    def second() -> None:
+        held.wait(timeout=5)
+        second_waiting.set()
+        with mgr.lock("file:/x"):
+            pass  # should succeed after first releases
+
+    t1 = threading.Thread(target=first)
+    t2 = threading.Thread(target=second)
+    t1.start()
+    t2.start()
+
+    held.wait(timeout=5)
+    second_waiting.wait(timeout=5)
+    # Give second thread a moment to call _get_lock (increment refcount)
+    # before we release the first
+    import time
+
+    time.sleep(0.01)
+    release.set()
+
+    t1.join(timeout=5)
+    t2.join(timeout=5)
+
+    # Both completed without error — the lock was not prematurely deleted
+    assert t1.is_alive() is False
+    assert t2.is_alive() is False

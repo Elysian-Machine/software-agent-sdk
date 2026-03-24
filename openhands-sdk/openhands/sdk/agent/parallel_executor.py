@@ -51,10 +51,6 @@ class ParallelToolExecutor:
         self._max_workers = max_workers
         self._lock_manager = lock_manager or ResourceLockManager()
 
-    @property
-    def lock_manager(self) -> ResourceLockManager:
-        return self._lock_manager
-
     def execute_batch(
         self,
         action_events: Sequence[ActionEvent],
@@ -67,9 +63,9 @@ class ParallelToolExecutor:
             action_events: Sequence of ActionEvent objects to execute.
             tool_runner: A callable that takes an ActionEvent and returns
                         a list of Event objects produced by the execution.
-            tools: Optional mapping of tool name → ToolDefinition used to
-                   derive resource keys for locking. When *None*, locking
-                   is skipped (backward-compatible).
+            tools: Optional mapping of tool name to ToolDefinition used
+                   to derive resource keys for locking. When *None*,
+                   locking is skipped (backward-compatible).
 
         Returns:
             List of event lists in the same order as the input action_events.
@@ -102,26 +98,32 @@ class ParallelToolExecutor:
 
         Locking strategy:
 
-        - ``readOnlyHint=True`` → no locking.
-        - ``get_resource_keys()`` returns keys → lock those resources.
-        - Otherwise → fall back to ``tool:<name>`` mutex.
+        - ``declared=False`` → ``tool:<name>`` mutex.
+        - ``declared=True``, empty keys → no locking.
+        - ``declared=True``, keys present → lock those resources.
         """
         try:
             tool = tools.get(action.tool_name) if tools else None
 
-            # Fast path: no tool metadata or single-worker → skip locking
-            if tool is None or self._max_workers == 1:
+            # No tool metadata available → skip locking
+            if tool is None:
                 return tool_runner(action)
 
-            # Read-only tools need no locking
-            if tool.annotations and tool.annotations.readOnlyHint:
-                return tool_runner(action)
+            # Derive lock strategy from declared_resources
+            parsed_action = action.action
+            if parsed_action is None:
+                resources = None
+            else:
+                resources = tool.declared_resources(parsed_action)
 
-            # Derive lock keys
-            if action.action is None:
+            if resources is None or not resources.declared:
+                # Tool doesn't declare resources → tool-wide mutex
+                lock_keys = [f"tool:{tool.name}"]
+            elif not resources.keys:
+                # Tool declares no shared resources → safe to skip
                 return tool_runner(action)
-            resource_keys = tool.get_resource_keys(action.action)
-            lock_keys = resource_keys if resource_keys else [f"tool:{tool.name}"]
+            else:
+                lock_keys = list(resources.keys)
 
             with self._lock_manager.lock(*lock_keys):
                 return tool_runner(action)

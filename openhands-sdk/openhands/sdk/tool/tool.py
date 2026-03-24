@@ -2,6 +2,7 @@ import re
 import threading
 from abc import ABC, abstractmethod
 from collections.abc import Sequence
+from dataclasses import dataclass
 from typing import (
     TYPE_CHECKING,
     Any,
@@ -93,6 +94,24 @@ class ToolAnnotations(BaseModel):
         default=True,
         description="If true, this tool may interact with an 'open world' of external entities. If false, the tool's domain of interaction is closed. For example, the world of a web search tool is open, whereas that of a memory tool is not. Default: true",  # noqa: E501
     )
+
+
+@dataclass(frozen=True, slots=True)
+class DeclaredResources:
+    """Resources a tool accesses for a given action.
+
+    Used by ``ParallelToolExecutor`` to decide what locks (if any) to
+    acquire before running a tool.
+
+    Examples::
+
+        DeclaredResources(keys=(), declared=False)       # unknown → serialize
+        DeclaredResources(keys=(), declared=True)         # safe, no resources
+        DeclaredResources(keys=("file:/a.py",), declared=True)  # lock these
+    """
+
+    keys: tuple[str, ...]
+    declared: bool
 
 
 class ToolExecutor[ActionT, ObservationT](ABC):
@@ -282,20 +301,15 @@ class ToolDefinition[ActionT, ObservationT](DiscriminatedUnionMixin, ABC):
             raise NotImplementedError(f"Tool '{self.name}' has no executor")
         return self  # type: ignore[return-value]
 
-    def get_resource_keys(self, action: Action) -> list[str]:  # noqa: ARG002
+    def declared_resources(self, action: Action) -> DeclaredResources:  # noqa: ARG002
         """Declare the resources this tool accesses for a given action.
 
         Override in subclasses to enable fine-grained parallel execution.
-        Returning a non-empty list causes ``ParallelToolExecutor`` to
-        acquire per-resource locks instead of serializing the entire tool.
-
-        Returning an empty list (the default) means the executor will
-        fall back to a tool-wide mutex – safe but maximally serialized.
 
         Keys should use the format ``"<type>:<identifier>"``, e.g.
         ``"file:/absolute/path"`` or ``"terminal:session"``.
         """
-        return []
+        return DeclaredResources(keys=(), declared=False)
 
     def action_from_arguments(self, arguments: dict[str, Any]) -> Action:
         """Create an action from parsed arguments.
