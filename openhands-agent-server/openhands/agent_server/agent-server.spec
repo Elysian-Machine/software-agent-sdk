@@ -132,6 +132,62 @@ a = Analysis(
 # This prevents bundling incompatible libgcc_s.so.1 that lacks GCC_14.0 symbols
 a.binaries = [x for x in a.binaries if not x[0].startswith('libgcc_s.so')]
 
+# ---------------------------------------------------------------------------
+# Fix executable stack flags on bundled shared libraries.
+#
+# CPython's libpython3.13.so.1.0 (as distributed by astral-sh/uv) is built
+# with PT_GNU_STACK RWX (requests executable stack).  glibc >= 2.41-12+deb13u2
+# (Debian Trixie, used in the nikolaik runtime image) tightened NX-stack
+# enforcement and the dynamic linker now rejects such libraries with EINVAL.
+# sysbox-runc's seccomp policy also blocks the mprotect(PROT_EXEC) fallback.
+#
+# We clear the PF_X (executable) bit from PT_GNU_STACK on every bundled .so
+# *before* PyInstaller's strip + bundle step so the onefile archive contains
+# clean libraries that load under strict NX policies.
+# ---------------------------------------------------------------------------
+import struct
+import shutil
+import tempfile
+
+def _clear_execstack(filepath):
+    """Clear PF_X from PT_GNU_STACK in a 64-bit ELF. Returns True if patched."""
+    with open(filepath, 'r+b') as f:
+        if f.read(4) != b'\x7fELF':
+            return False
+        ei_class = f.read(1)[0]
+        if ei_class != 2:  # 64-bit only
+            return False
+        f.seek(32)
+        e_phoff = struct.unpack('<Q', f.read(8))[0]
+        f.seek(54)
+        e_phentsize, e_phnum = struct.unpack('<HH', f.read(4))
+        for i in range(e_phnum):
+            off = e_phoff + i * e_phentsize
+            f.seek(off)
+            p_type = struct.unpack('<I', f.read(4))[0]
+            if p_type == 0x6474e551:  # PT_GNU_STACK
+                p_flags = struct.unpack('<I', f.read(4))[0]
+                if p_flags & 0x1:  # PF_X (executable)
+                    f.seek(off + 4)
+                    f.write(struct.pack('<I', p_flags & ~0x1))
+                    return True
+                return False
+    return False
+
+_nxfix_tmpdir = tempfile.mkdtemp(prefix='pyinstaller_nxfix_')
+_fixed_binaries = []
+for name, path, typecode in a.binaries:
+    if '.so' in name:
+        tmp_path = os.path.join(_nxfix_tmpdir, name.replace(os.sep, '_'))
+        shutil.copy2(path, tmp_path)
+        if _clear_execstack(tmp_path):
+            print(f'  [NX-fix] Cleared executable stack: {name}')
+            _fixed_binaries.append((name, tmp_path, typecode))
+            continue
+        os.unlink(tmp_path)
+    _fixed_binaries.append((name, path, typecode))
+a.binaries = _fixed_binaries
+
 pyz = PYZ(a.pure)
 
 exe = EXE(
