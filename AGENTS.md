@@ -323,6 +323,7 @@ Note: This is separate from `persistence_dir` which is used for conversation sta
 - Ruff: `line-length = 88`, `target-version = "py312"` (see `pyproject.toml`).
 - Ruff ignores `ARG` (unused arguments) under `tests/**/*.py` to allow pytest fixtures.
 - Repository guidance lives in the project root AGENTS.md (loaded as a third-party skill file).
+- Agent-server LLM switching should stay profile-first: prefer `/api/llm-profiles` CRUD and conversation profile switching over per-conversation raw LLM payload setters (see PR #2485 design doc).
 </REPO_CONFIG_NOTES>
 
 </REPO>

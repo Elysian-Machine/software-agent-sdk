@@ -21,6 +21,7 @@ from openhands.agent_server.models import (
     GenerateTitleResponse,
     SendMessageRequest,
     SetConfirmationPolicyRequest,
+    SetConversationLLMProfileRequest,
     SetSecurityAnalyzerRequest,
     StartConversationRequest,
     Success,
@@ -282,6 +283,49 @@ async def update_conversation(
     if not updated:
         return Success(success=False)
     return Success()
+
+
+@conversation_router.post(
+    "/{conversation_id}/llm_profile",
+    responses={
+        400: {"description": "Conversation does not support LLM profiles"},
+        404: {"description": "Conversation or LLM profile not found"},
+        409: {"description": "Conversation is already running"},
+    },
+)
+async def switch_conversation_llm_profile(
+    conversation_id: UUID,
+    request: SetConversationLLMProfileRequest,
+    conversation_service: ConversationService = Depends(get_conversation_service),
+) -> ConversationInfo:
+    """Switch a conversation to a named LLM profile."""
+    try:
+        conversation = await conversation_service.switch_conversation_llm_profile(
+            conversation_id,
+            request.profile_id,
+        )
+    except FileNotFoundError as e:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, detail=str(e)) from e
+    except ValueError as e:
+        if str(e) == "conversation_already_running":
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail=(
+                    "Conversation already running. Wait for completion or pause first."
+                ),
+            ) from e
+        if str(e) == "llm_profiles_not_supported":
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail=(
+                    "LLM profiles are only supported for standard Agent conversations."
+                ),
+            ) from e
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e))
+
+    if conversation is None:
+        raise HTTPException(status.HTTP_404_NOT_FOUND)
+    return conversation
 
 
 @conversation_router.post(

@@ -1203,6 +1203,56 @@ class TestConversationServiceUpdateConversation:
 
         assert mock_service.stored.updated_at > original_updated_at
 
+    @pytest.mark.asyncio
+    async def test_switch_conversation_llm_profile_success(
+        self, conversation_service, sample_stored_conversation
+    ):
+        """Test switching a conversation to a named LLM profile."""
+        mock_service = AsyncMock(spec=EventService)
+        mock_service.stored = sample_stored_conversation.model_copy(deep=True)
+        mock_state = ConversationState(
+            id=mock_service.stored.id,
+            agent=mock_service.stored.agent,
+            workspace=mock_service.stored.workspace,
+            execution_status=ConversationExecutionStatus.IDLE,
+            confirmation_policy=mock_service.stored.confirmation_policy,
+        )
+        mock_service.get_state.return_value = mock_state
+
+        async def switch_profile(profile_id: str) -> None:
+            agent = mock_service.stored.agent
+            assert isinstance(agent, Agent)
+            new_agent = agent.model_copy(
+                update={
+                    "llm": LLM(
+                        model="gpt-4.1",
+                        usage_id=f"profile:{profile_id}",
+                    )
+                }
+            )
+            mock_service.stored.agent = new_agent
+            mock_service.stored.llm_profile_id = profile_id
+            mock_state.agent = new_agent
+
+        mock_service.switch_profile.side_effect = switch_profile
+
+        conversation_id = mock_service.stored.id
+        conversation_service._event_services[conversation_id] = mock_service
+
+        with patch.object(
+            conversation_service, "_notify_conversation_webhooks", new=AsyncMock()
+        ) as mock_notify:
+            result = await conversation_service.switch_conversation_llm_profile(
+                conversation_id,
+                "fast",
+            )
+
+        assert result is not None
+        assert result.llm_profile_id == "fast"
+        assert result.agent.llm.model == "gpt-4.1"
+        mock_service.save_meta.assert_called_once()
+        mock_notify.assert_called_once()
+
 
 class TestConversationServiceDeleteConversation:
     """Test cases for ConversationService.delete_conversation method."""

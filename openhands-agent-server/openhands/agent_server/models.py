@@ -179,6 +179,12 @@ class StoredConversation(StartACPConversationRequest):
     metrics: MetricsSnapshot | None = None
     created_at: datetime = Field(default_factory=utc_now)
     updated_at: datetime = Field(default_factory=utc_now)
+    llm_profile_id: str | None = Field(
+        default=None,
+        description=(
+            "Optional named LLM profile backing this conversation's active LLM."
+        ),
+    )
 
 
 class _ConversationInfoBase(BaseModel):
@@ -275,6 +281,12 @@ class ConversationInfo(_ConversationInfoBase):
         description=(
             "The legacy v1 agent configuration. "
             "This endpoint remains pinned to the standard Agent contract."
+        ),
+    )
+    llm_profile_id: str | None = Field(
+        default=None,
+        description=(
+            "Optional named LLM profile currently backing the conversation LLM."
         ),
     )
 
@@ -386,6 +398,16 @@ class UpdateConversationRequest(BaseModel):
 
     title: str = Field(
         ..., min_length=1, max_length=200, description="New conversation title"
+    )
+
+
+class SetConversationLLMProfileRequest(BaseModel):
+    """Payload to switch a conversation to a named LLM profile."""
+
+    profile_id: str = Field(
+        ...,
+        min_length=1,
+        description="Name of the LLM profile to load for the conversation.",
     )
 
 

@@ -1120,6 +1120,81 @@ def test_update_conversation_invalid_title(
         client.app.dependency_overrides.clear()
 
 
+def test_switch_conversation_llm_profile_success(
+    client, mock_conversation_service, sample_conversation_id, sample_conversation_info
+):
+    """Test switching a conversation to a named LLM profile."""
+    mock_conversation_service.switch_conversation_llm_profile.return_value = (
+        sample_conversation_info.model_copy(update={"llm_profile_id": "fast"})
+    )
+
+    client.app.dependency_overrides[get_conversation_service] = (
+        lambda: mock_conversation_service
+    )
+
+    try:
+        response = client.post(
+            f"/api/conversations/{sample_conversation_id}/llm_profile",
+            json={"profile_id": "fast"},
+        )
+
+        assert response.status_code == 200
+        data = response.json()
+        assert data["llm_profile_id"] == "fast"
+        mock_conversation_service.switch_conversation_llm_profile.assert_called_once_with(
+            sample_conversation_id,
+            "fast",
+        )
+    finally:
+        client.app.dependency_overrides.clear()
+
+
+def test_switch_conversation_llm_profile_running_conflict(
+    client, mock_conversation_service, sample_conversation_id
+):
+    """Test switching a running conversation returns a conflict response."""
+    mock_conversation_service.switch_conversation_llm_profile.side_effect = ValueError(
+        "conversation_already_running"
+    )
+
+    client.app.dependency_overrides[get_conversation_service] = (
+        lambda: mock_conversation_service
+    )
+
+    try:
+        response = client.post(
+            f"/api/conversations/{sample_conversation_id}/llm_profile",
+            json={"profile_id": "fast"},
+        )
+
+        assert response.status_code == 409
+    finally:
+        client.app.dependency_overrides.clear()
+
+
+def test_switch_conversation_llm_profile_missing_profile(
+    client, mock_conversation_service, sample_conversation_id
+):
+    """Test switching to a missing LLM profile returns not found."""
+    mock_conversation_service.switch_conversation_llm_profile.side_effect = (
+        FileNotFoundError("Profile `fast` not found")
+    )
+
+    client.app.dependency_overrides[get_conversation_service] = (
+        lambda: mock_conversation_service
+    )
+
+    try:
+        response = client.post(
+            f"/api/conversations/{sample_conversation_id}/llm_profile",
+            json={"profile_id": "fast"},
+        )
+
+        assert response.status_code == 404
+    finally:
+        client.app.dependency_overrides.clear()
+
+
 def test_generate_conversation_title_success(
     client, mock_conversation_service, sample_conversation_id
 ):
