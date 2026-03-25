@@ -213,13 +213,13 @@ async def events_socket(
                 try:
                     error_event = ConversationErrorEvent(
                         source="environment",
-                        code="MCP_CONNECTION_ERROR",
+                        code="RUNTIME_ERROR",
                         detail=str(e),
                     )
                     await _send_event(error_event, websocket)
                 except Exception:
                     # MCP Failed but there was an error sending to the client
-                    logger.exception('mcp_send_error_failure', stack_info=True)
+                    logger.exception('send_error_failure', stack_info=True)
                 #raise
             except Exception as e:
                 # For other exceptions, log and continue the loop
