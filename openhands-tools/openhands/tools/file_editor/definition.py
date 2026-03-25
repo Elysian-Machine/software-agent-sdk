@@ -13,6 +13,7 @@ from rich.text import Text
 
 from openhands.sdk.tool import (
     Action,
+    DeclaredResources,
     Observation,
     ToolAnnotations,
     ToolDefinition,
@@ -190,6 +191,17 @@ Remember: when making multiple file edits in a row to the same file, you should 
 
 class FileEditorTool(ToolDefinition[FileEditorAction, FileEditorObservation]):
     """A ToolDefinition subclass that automatically initializes a FileEditorExecutor."""
+
+    def declared_resources(self, action: Action) -> DeclaredResources:
+        """Declare file resources accessed by this action.
+
+        All commands — including read-only ``view`` — lock on the target
+        file path.  This ensures a view never reads partially-written
+        content during a concurrent write.  Modifications or accesses to
+        *different* files run in parallel.
+        """
+        assert isinstance(action, FileEditorAction)
+        return DeclaredResources(keys=(f"file:{action.path}",), declared=True)
 
     @classmethod
     def create(
