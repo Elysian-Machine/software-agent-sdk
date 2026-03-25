@@ -3,7 +3,10 @@
 # NOTE: LC_ALL/LANG must be set to C.UTF-8 for libtmux to work correctly with
 # PyInstaller builds. Without proper locale, tmux converts UTF-8 separator
 # characters to underscores, breaking libtmux's format parsing.
-ARG BASE_IMAGE=nikolaik/python-nodejs:python3.13-nodejs22
+# Pinned to last known working digest (2025-03-23, glibc 2.41-12+deb13u1).
+# glibc deb13u2 breaks PyInstaller binaries by rejecting PT_GNU_STACK RWX
+# on libpython3.13.so.1.0. See OpenHands/benchmarks#573.
+ARG BASE_IMAGE=nikolaik/python-nodejs:python3.13-nodejs22@sha256:93e0bac86ea94f9956dc43c515cf77c2356a85de27128df4225de8c0b79425b2
 ARG USERNAME=openhands
 ARG UID=10001
 ARG GID=10001
