@@ -336,6 +336,15 @@ class LLM(BaseModel, RetryMixin, NonNativeToolCallingMixin):
     seed: int | None = Field(
         default=None, description="The seed to use for random number generation."
     )
+    # REMOVE_AT: 1.20.0 - Remove this field (REST API deprecation runway)
+    safety_settings: list[dict[str, str]] | None = Field(
+        default=None,
+        deprecated=("Deprecated since v1.15.0 and scheduled for removal in v1.20.0."),
+        description=(
+            "No-op. Safety settings are no longer applied. "
+            "Deprecated since v1.15.0 and scheduled for removal in v1.20.0."
+        ),
+    )
     usage_id: str = Field(
         default="default",
         serialization_alias="usage_id",
