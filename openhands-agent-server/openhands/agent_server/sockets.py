@@ -210,7 +210,7 @@ async def events_socket(
             except Exception as e:
                 logger.exception("error_in_subscription", stack_info=True)
 
-                # For MCP errors send error event to client before closing
+                # For MCP errors send error event to client
                 if isinstance(e, MCPError):
                     try:
                         error_event = ConversationErrorEvent(
