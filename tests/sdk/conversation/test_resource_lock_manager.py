@@ -230,11 +230,14 @@ def test_cleanup_preserves_contended_locks():
 
     held.wait(timeout=5)
     second_waiting.wait(timeout=5)
-    # Give second thread a moment to call _get_lock (increment refcount)
-    # before we release the first
+    # There is a small race here: second_waiting.set() fires before
+    # _get_lock() increments the refcount. We cannot observe that
+    # increment without test-only hooks in production code, so we
+    # sleep briefly to make it overwhelmingly likely the second
+    # thread has entered _get_lock() before we release the first.
     import time
 
-    time.sleep(0.01)
+    time.sleep(0.1)
     release.set()
 
     t1.join(timeout=5)

@@ -98,7 +98,10 @@ class ResourceLockManager:
             for key in sorted_keys:
                 timeout = self._get_timeout(key)
                 if not self._get_lock(key).acquire(timeout=timeout):
-                    # _get_lock incremented refcount; undo it
+                    # _get_lock() already incremented the refcount for this
+                    # key. Since acquisition failed, this key won't be added
+                    # to acquired[] and the finally block won't clean it up
+                    # — so we must undo the refcount increment here.
                     with self._meta_lock:
                         self._refcounts[key] -= 1
                         if self._refcounts[key] == 0 and not self._locks[key].locked():
