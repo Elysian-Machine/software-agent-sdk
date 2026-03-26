@@ -294,6 +294,8 @@ async def bash_events_socket(
                 await bash_event_service.start_bash_command(request)
             except (WebSocketDisconnect, ConnectionError, RuntimeError):
                 # Exit the loop when websocket disconnects
+                # Note: A RuntimeError is raised when attempting to send over a
+                # broken socket.
                 logger.info("Bash websocket disconnected")
                 try:
                     await websocket.close(code=1000, reason="Connection closed")
