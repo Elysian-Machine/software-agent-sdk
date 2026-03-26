@@ -207,9 +207,8 @@ async def events_socket(
                 # Exit the loop when websocket disconnects
                 logger.info(f"Event websocket disconnected: {conversation_id}")
                 return
-            except (MCPError, RuntimeError) as e:
-                # Something went wrong in setup and the conversation may be
-                # broken (Typical culprit is an MCP misconfiguration)
+            except Exception as e:
+                # Something went wrong - the conversation may be broken
                 # Tell the client about this so they can decide what to do next
                 logger.exception("error_in_subscription", stack_info=True)
                 try:
@@ -222,9 +221,6 @@ async def events_socket(
                 except Exception:
                     # Sending failed
                     logger.exception("send_error_failure", stack_info=True)
-            except Exception:
-                # For other exceptions, log and continue the loop
-                logger.exception("error_in_subscription", stack_info=True)
     finally:
         await event_service.unsubscribe_from_events(subscriber_id)
 
@@ -289,16 +285,24 @@ async def bash_events_socket(
                 logger.info("Received bash request")
                 request = ExecuteBashRequest.model_validate(data)
                 await bash_event_service.start_bash_command(request)
-            except WebSocketDisconnect:
+            except (WebSocketDisconnect, ConnectionError):
                 # Exit the loop when websocket disconnects
                 logger.info("Bash websocket disconnected")
                 return
             except Exception as e:
-                logger.exception("error_in_bash_event_subscription", stack_info=True)
-                # For critical errors that indicate the websocket is broken, exit
-                if isinstance(e, (RuntimeError, ConnectionError)):
-                    raise
-                # For other exceptions, continue the loop
+                # Something went wrong - the conversation may be broken
+                # Tell the client about this so they can decide what to do next
+                logger.exception("error_in_subscription", stack_info=True)
+                try:
+                    error_event = ConversationErrorEvent(
+                        source="environment",
+                        code=e.__class__.__name__,
+                        detail=str(e),
+                    )
+                    await _send_event(error_event, websocket)
+                except Exception:
+                    # Sending failed
+                    logger.exception("send_error_failure", stack_info=True)
     finally:
         await bash_event_service.unsubscribe_from_events(subscriber_id)
 
