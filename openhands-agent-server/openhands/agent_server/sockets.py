@@ -205,7 +205,7 @@ async def events_socket(
                 logger.info(f"Received message: {conversation_id}")
                 message = Message.model_validate(data)
                 await event_service.send_message(message, True)
-            except (WebSocketDisconnect, ConnectionError):
+            except (WebSocketDisconnect, ConnectionError, RuntimeError):
                 # Exit the loop when websocket disconnects
                 logger.info(f"Event websocket disconnected: {conversation_id}")
                 try:
@@ -292,7 +292,7 @@ async def bash_events_socket(
                 logger.info("Received bash request")
                 request = ExecuteBashRequest.model_validate(data)
                 await bash_event_service.start_bash_command(request)
-            except (WebSocketDisconnect, ConnectionError):
+            except (WebSocketDisconnect, ConnectionError, RuntimeError):
                 # Exit the loop when websocket disconnects
                 logger.info("Bash websocket disconnected")
                 try:

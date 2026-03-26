@@ -211,7 +211,7 @@ async def test_websocket_unsubscribe_in_finally_when_no_disconnect(
     mock_websocket, mock_event_service, sample_conversation_id
 ):
     """Test that unsubscribe is called even when there's no WebSocketDisconnect."""
-    mock_websocket.receive_json.side_effect = ConnectionError("Connection broken")
+    mock_websocket.receive_json.side_effect = RuntimeError("Connection broken")
 
     with (
         patch(
@@ -224,7 +224,7 @@ async def test_websocket_unsubscribe_in_finally_when_no_disconnect(
 
         from openhands.agent_server.sockets import events_socket
 
-        # ConnectionError is caught gracefully (like WebSocketDisconnect)
+        # RuntimeError is caught gracefully (like WebSocketDisconnect)
         # and the function returns normally
         await events_socket(
             sample_conversation_id, mock_websocket, session_api_key=None
