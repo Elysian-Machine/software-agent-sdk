@@ -292,7 +292,7 @@ async def bash_events_socket(
             except Exception as e:
                 # Something went wrong - the conversation may be broken
                 # Tell the client about this so they can decide what to do next
-                logger.exception("error_in_subscription", stack_info=True)
+                logger.exception("error_in_bash_event_subscription", stack_info=True)
                 try:
                     error_event = ConversationErrorEvent(
                         source="environment",
