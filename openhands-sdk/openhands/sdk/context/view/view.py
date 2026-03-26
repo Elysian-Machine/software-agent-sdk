@@ -28,13 +28,10 @@ class View(BaseModel):
     in deciding whether further condensation is needed.
     """
 
-    events: list[LLMConvertibleEvent]
+    events: list[LLMConvertibleEvent] = Field(default_factory=list)
 
     unhandled_condensation_request: bool = False
     """Whether there is an unhandled condensation request in the view."""
-
-    condensations: list[Condensation] = Field(default_factory=list)
-    """A list of condensations that were processed to produce the view."""
 
     def __len__(self) -> int:
         return len(self.events)
@@ -74,22 +71,6 @@ class View(BaseModel):
             return self.events[key]
         else:
             raise ValueError(f"Invalid key type: {type(key)}")
-
-    @staticmethod
-    def unhandled_condensation_request_exists(
-        events: Sequence[Event],
-    ) -> bool:
-        """Check if there is an unhandled condensation request in the list of events.
-
-        An unhandled condensation request is defined as a CondensationRequest event
-        that appears after the most recent Condensation event in the list.
-        """
-        for event in reversed(events):
-            if isinstance(event, Condensation):
-                return False
-            if isinstance(event, CondensationRequest):
-                return True
-        return False
 
     @staticmethod
     def enforce_properties(
@@ -170,10 +151,5 @@ class View(BaseModel):
 
         return View(
             events=output,
-            unhandled_condensation_request=View.unhandled_condensation_request_exists(
-                events
-            ),
-            condensations=[
-                event for event in events if isinstance(event, Condensation)
-            ],
+            unhandled_condensation_request=result.unhandled_condensation_request,
         )
