@@ -185,7 +185,9 @@ class TmuxPanePool:
         if not self._initialized or self._closed:
             raise RuntimeError("TmuxPanePool is not initialized or already closed")
 
-        if not self._semaphore.acquire(timeout=timeout if timeout is not None else -1):
+        if timeout is None:
+            self._semaphore.acquire()
+        elif not self._semaphore.acquire(timeout=timeout):
             raise TimeoutError(
                 f"No pane available within {timeout}s (pool size {self.max_panes})"
             )
