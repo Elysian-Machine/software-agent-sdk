@@ -13,10 +13,11 @@ from collections.abc import Sequence
 from typing import TYPE_CHECKING, Final
 
 from pydantic import Field
+from pydantic.json_schema import SkipJsonSchema
 from rich.text import Text
 
 from openhands.sdk import ImageContent, TextContent
-from openhands.sdk.subagent import get_factory_info
+from openhands.sdk.subagent import get_factory_info, get_registered_agent_definitions
 from openhands.sdk.tool import (
     Action,
     Observation,
@@ -43,16 +44,19 @@ class TaskAction(Action):
         description="The task for the agent to perform.",
     )
     subagent_type: str = Field(
-        default="general purpose",
+        default="default",
         description="The type of specialized agent to use for this task.",
     )
     resume: str | None = Field(
         default=None,
         description="Task ID of the task to resume from.",
     )
-    max_turns: int | None = Field(
+    max_turns: SkipJsonSchema[int | None] = Field(
         default=None,
-        description="Maximum number of agentic turns before stopping.",
+        description="Deprecated: This field is ignored and will be removed "
+        "in version 2. Maximum iterations are now determined by "
+        "the agent definition or parent conversation.",
+        deprecated=True,
         ge=1,
     )
 
@@ -104,12 +108,10 @@ class TaskObservation(Observation):
 
 TASK_TOOL_DESCRIPTION: Final[
     str
-] = """Launch a subagent to handle exploration or execution tasks.
-Subagents are autonomous agents that work independently and return results
-to you. They are your primary tool for understanding codebases and running
-tests. They are useful for understanding codebases and running tests, but
-each delegation has overhead — use them when the task genuinely benefits
-from a separate agent, not for simple lookups.
+] = """Launch a subagent to handle complex, multi-step tasks autonomously.
+
+Subagents are autonomous agents that work independently and return results to you. They are your primary tool for understanding codebases and running
+tests, but each delegation has overhead — use them when the task genuinely benefits from a separate agent, not for simple lookups.
 
 Available agent types and the tools they have access to:
 {agent_types_info}
@@ -125,17 +127,21 @@ When using the task tool:
 - Tell the agent what to report back (file paths, line numbers, code snippets)
 - The agent's results are authoritative — verify subagent results only when the task involves judgment or
   interpretation.
+  
+{task_tool_examples}
+"""  # noqa: E501
 
-Examples:
-
-Example 1 — Multi-step exploration (good use of code-explorer):
+TASK_TOOL_EXAMPLES: Final[dict[str, str]] = {
+    "code-explorer": """
+Example — Multi-step exploration (good use of code-explorer):
     subagent_type="code-explorer"
     prompt="Trace how the DateFormat.y() method is called through Django's
     template system. Find: (1) the method definition, (2) where it's
     registered as a format character, (3) all test cases. Include code
     snippets and file paths."
-    
-Example 2 — Running tests (good use of bash-runner):
+""",
+    "bash-runner": """
+Example — Running tests (good use of bash-runner):
     subagent_type="bash-runner"
     prompt="Run: cd /workspace/django && python tests/runtests.py
     utils_tests.test_dateformat -v 2. Provide a summary including
@@ -143,17 +149,20 @@ Example 2 — Running tests (good use of bash-runner):
     failing test names. For each failure, include the specific
     cause or assertion error, but do not include the full stack
     trace or the verbose setup/teardown output."
-
-Example 3 - Research information on a website (good use of web researcher):
+""",
+    "web researcher": """
+Example — Research information on a website (good use of web researcher):
     subagent_type="web researcher"
     prompt="Navigate to the Stripe API docs and find the parameters for the PaymentIntent create endpoint."
-
-Example 4 - Perform a multi-step task involving code editing and shell commands:
+""",  # noqa: E501
+    "general purpose": """
+Example — Perform a multi-step task involving code editing and shell commands:
     subagent_type="general purpose"
     prompt="Read the database module in src/db.py, extract the connection
     pooling logic into a separate file, update all imports, and run the
     test suite to verify nothing breaks."
-"""  # noqa: E501
+""",
+}
 
 
 class TaskTool(ToolDefinition[TaskAction, TaskObservation]):
@@ -222,8 +231,14 @@ class TaskToolSet(ToolDefinition[TaskAction, TaskObservation]):
 
         agent_types_info = get_factory_info()
 
+        registered = {d.name for d in get_registered_agent_definitions()}
+        task_tool_examples = "\n".join(
+            ex for name, ex in TASK_TOOL_EXAMPLES.items() if name in registered
+        )
+
         task_description = TASK_TOOL_DESCRIPTION.format(
-            agent_types_info=agent_types_info
+            agent_types_info=agent_types_info,
+            task_tool_examples=task_tool_examples,
         )
 
         manager = TaskManager(confirmation_handler=confirmation_handler)
