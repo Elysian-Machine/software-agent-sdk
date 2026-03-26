@@ -5,7 +5,12 @@ from pydantic import BaseModel, Field
 
 
 class CommandSpec(BaseModel):
-    """Specification for a shell command to execute for dynamic context."""
+    """Specification for a shell command to execute for dynamic context.
+
+    **Security Warning**: Commands are executed via shell with full process
+    privileges. Only use with trusted skill sources. Avoid loading skills
+    with commands from untrusted third parties.
+    """
 
     name: str = Field(description="Variable name for template substitution")
     command: str = Field(description="Shell command to execute")

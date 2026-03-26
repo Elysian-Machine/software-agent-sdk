@@ -94,3 +94,10 @@ def test_skill_render_content(content: str, commands: list, expected: str):
     assert (
         Skill(name="t", content=content, commands=commands).render_content() == expected
     )
+
+
+def test_execute_command_respects_working_dir(tmp_path: Path):
+    """Commands should run in the specified working directory."""
+    spec = CommandSpec(name="cwd", command="pwd")
+    result = _execute_command(spec, working_dir=tmp_path)
+    assert result == str(tmp_path.resolve())
