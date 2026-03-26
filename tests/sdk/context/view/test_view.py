@@ -292,4 +292,3 @@ def test_condensation_request_always_removed_from_view() -> None:
     for event in view_handled:
         assert not isinstance(event, CondensationRequest)
         assert not isinstance(event, Condensation)
-
