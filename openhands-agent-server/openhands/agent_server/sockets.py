@@ -26,10 +26,13 @@ from openhands.agent_server.conversation_service import (
     get_default_conversation_service,
 )
 from openhands.agent_server.event_router import normalize_datetime_to_server_timezone
-from openhands.agent_server.models import BashEventBase, ExecuteBashRequest
+from openhands.agent_server.models import (
+    AgentServerErrorEvent,
+    BashEventBase,
+    ExecuteBashRequest,
+)
 from openhands.agent_server.pub_sub import Subscriber
 from openhands.sdk import Event, Message
-from openhands.sdk.event.conversation_error import ConversationErrorEvent
 from openhands.sdk.utils.paging import page_iterator
 
 
@@ -211,7 +214,7 @@ async def events_socket(
                 # Tell the client about this so they can decide what to do next
                 logger.exception("error_in_subscription", stack_info=True)
                 try:
-                    error_event = ConversationErrorEvent(
+                    error_event = AgentServerErrorEvent(
                         source="environment",
                         code=e.__class__.__name__,
                         detail=str(e),
@@ -293,7 +296,7 @@ async def bash_events_socket(
                 # Tell the client about this so they can decide what to do next
                 logger.exception("error_in_bash_event_subscription", stack_info=True)
                 try:
-                    error_event = ConversationErrorEvent(
+                    error_event = AgentServerErrorEvent(
                         source="environment",
                         code=e.__class__.__name__,
                         detail=str(e),
