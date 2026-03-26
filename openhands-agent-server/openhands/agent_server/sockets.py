@@ -30,7 +30,6 @@ from openhands.agent_server.models import BashEventBase, ExecuteBashRequest
 from openhands.agent_server.pub_sub import Subscriber
 from openhands.sdk import Event, Message
 from openhands.sdk.event.conversation_error import ConversationErrorEvent
-from openhands.sdk.mcp.exceptions import MCPError
 from openhands.sdk.utils.paging import page_iterator
 
 
