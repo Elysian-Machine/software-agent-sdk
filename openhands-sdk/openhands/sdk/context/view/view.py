@@ -121,44 +121,59 @@ class View(BaseModel):
                 )
         return current_view_events
 
-    @staticmethod
-    def from_events(events: Sequence[Event]) -> View:
-        """Create a view from a list of events, respecting the semantics of any
-        condensation events.
+    def append_event(self, event: Event) -> None:
+        """Append an event to the end of the view, applying any condensation semantics
+        as we do.
+
+        Modifies the view in-place.
         """
-        output: list[LLMConvertibleEvent] = []
-        condensations: list[Condensation] = []
-
-        # Generate the LLMConvertibleEvent objects the agent can send to the LLM by
-        # removing un-sendable events and applying condensations in order.
-        for event in events:
-            # By the time we come across a Condensation event, the output list should
+        match event:
+            # By the time we come across a Condensation event, the event list should
             # already reflect the events seen by the agent up to that point. We can
-            # therefore apply the condensation semantics directly to the output list.
-            if isinstance(event, Condensation):
-                condensations.append(event)
-                output = event.apply(output)
+            # therefore apply the condensation semantics directly to the stored events.
+            case Condensation():
+                self.events = event.apply(self.events)
+                self.unhandled_condensation_request = False
 
-            elif isinstance(event, LLMConvertibleEvent):
-                output.append(event)
+            case CondensationRequest():
+                self.unhandled_condensation_request = True
+
+            case LLMConvertibleEvent():
+                self.events.append(event)
 
             # If the event isn't related to condensation and isn't LLMConvertible, it
             # should not be in the resulting view. Examples include certain internal
             # events used for state tracking that the LLM does not need to see -- see,
             # for example, ConversationStateUpdateEvent, PauseEvent, and (relevant here)
             # CondensationRequest.
-            else:
+            case _:
                 logger.debug(
                     f"Skipping non-LLMConvertibleEvent of type {type(event)} "
-                    "in View.from_events"
+                    "in View.append_event"
                 )
 
-        output = View.enforce_properties(output, events)
+    @staticmethod
+    def from_events(events: Sequence[Event]) -> View:
+        """Create a view from a list of events, respecting the semantics of any
+        condensation events.
+        """
+        result: View = View(events=[])
+
+        # Generate the LLMConvertibleEvent objects the agent can send to the LLM by
+        # adding them one at a time to the result view. This ensures condensations are
+        # applied in the order they were generated and condensation requests are
+        # appropriately tracked.
+        for event in events:
+            result.append_event(event)
+
+        output = View.enforce_properties(result.events, events)
 
         return View(
             events=output,
             unhandled_condensation_request=View.unhandled_condensation_request_exists(
                 events
             ),
-            condensations=condensations,
+            condensations=[
+                event for event in events if isinstance(event, Condensation)
+            ],
         )
