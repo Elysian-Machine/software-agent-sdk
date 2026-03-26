@@ -246,6 +246,86 @@ defined in user's repository.\n"
 
         assert result is None
 
+    def test_get_user_message_suffix_suggests_relevant_agentskill(self):
+        """Test that semantically relevant AgentSkills are surfaced per turn."""
+        frontend_skill = Skill(
+            name="frontend-design",
+            content="Full frontend design guidance.",
+            description=(
+                "Create distinctive frontend interfaces and web UI designs with "
+                "high visual quality."
+            ),
+            source="/skills/frontend-design/SKILL.md",
+            trigger=None,
+            is_agentskills_format=True,
+        )
+
+        context = AgentContext(skills=[frontend_skill])
+        user_message = Message(
+            role="user",
+            content=[
+                TextContent(
+                    text="Make a pretty frontend that describes what open source is."
+                )
+            ],
+        )
+
+        result = context.get_user_message_suffix(user_message, [])
+
+        assert result is not None
+        text_content, triggered_names = result
+        assert triggered_names == []
+        assert "<RELEVANT_SKILLS>" in text_content.text
+        assert "<name>frontend-design</name>" in text_content.text
+        assert "/skills/frontend-design/SKILL.md" in text_content.text
+        assert "Full frontend design guidance." not in text_content.text
+
+    def test_get_user_message_suffix_relevant_skill_hint_respects_skip_list(self):
+        """Test that skipped skills are not re-suggested as relevant hints."""
+        frontend_skill = Skill(
+            name="frontend-design",
+            content="Full frontend design guidance.",
+            description="Create distinctive frontend interfaces.",
+            source="/skills/frontend-design/SKILL.md",
+            trigger=None,
+            is_agentskills_format=True,
+        )
+
+        context = AgentContext(skills=[frontend_skill])
+        user_message = Message(
+            role="user",
+            content=[TextContent(text="Please design a bold frontend landing page.")],
+        )
+
+        result = context.get_user_message_suffix(user_message, ["frontend-design"])
+
+        assert result is None
+
+    def test_get_user_message_suffix_does_not_repeat_triggered_skill_hint(self):
+        """Test that a triggered skill is not also suggested as a relevant hint."""
+        frontend_skill = Skill(
+            name="frontend-design",
+            content="Full frontend design guidance.",
+            description="Create distinctive frontend interfaces.",
+            source="/skills/frontend-design/SKILL.md",
+            trigger=KeywordTrigger(keywords=["frontend"]),
+            is_agentskills_format=True,
+        )
+
+        context = AgentContext(skills=[frontend_skill])
+        user_message = Message(
+            role="user",
+            content=[TextContent(text="Please make this frontend more polished.")],
+        )
+
+        result = context.get_user_message_suffix(user_message, [])
+
+        assert result is not None
+        text_content, triggered_names = result
+        assert triggered_names == ["frontend-design"]
+        assert "<EXTRA_INFO>" in text_content.text
+        assert "<RELEVANT_SKILLS>" not in text_content.text
+
     def test_get_user_message_suffix_with_single_trigger(self):
         """Test user message suffix with single triggered skill."""
         knowledge_agent = Skill(

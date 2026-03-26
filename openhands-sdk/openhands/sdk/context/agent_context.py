@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import pathlib
+import re
 from collections.abc import Mapping
 from datetime import datetime
 
@@ -21,6 +22,96 @@ from openhands.sdk.secret import SecretSource, SecretValue
 
 
 logger = get_logger(__name__)
+
+
+_RELEVANT_SKILL_TERM_PATTERN = re.compile(r"[a-z0-9][a-z0-9_-]*")
+_RELEVANT_SKILL_STOPWORDS = {
+    "a",
+    "an",
+    "and",
+    "app",
+    "application",
+    "applications",
+    "assistant",
+    "build",
+    "built",
+    "check",
+    "create",
+    "describe",
+    "for",
+    "from",
+    "help",
+    "how",
+    "implement",
+    "into",
+    "make",
+    "need",
+    "open",
+    "openhands",
+    "please",
+    "project",
+    "projects",
+    "repo",
+    "repository",
+    "review",
+    "run",
+    "set",
+    "should",
+    "source",
+    "task",
+    "tasks",
+    "that",
+    "the",
+    "this",
+    "use",
+    "using",
+    "with",
+}
+_RELEVANT_SKILL_MIN_SCORE = 3
+_RELEVANT_SKILL_MAX_SUGGESTIONS = 3
+
+
+def _extract_relevance_terms(text: str) -> set[str]:
+    normalized = text.lower().replace("/", " ").replace("_", " ")
+    terms: set[str] = set()
+    for match in _RELEVANT_SKILL_TERM_PATTERN.finditer(normalized):
+        token = match.group(0).strip("-_")
+        if len(token) < 2 or token in _RELEVANT_SKILL_STOPWORDS:
+            continue
+        terms.add(token)
+        if "-" in token:
+            terms.update(
+                part
+                for part in token.split("-")
+                if len(part) >= 2 and part not in _RELEVANT_SKILL_STOPWORDS
+            )
+    return terms
+
+
+def _score_relevant_skill(skill: Skill, query: str, query_terms: set[str]) -> int:
+    haystack = " ".join(filter(None, [skill.name, skill.description or ""]))
+    skill_terms = _extract_relevance_terms(haystack)
+    score = len(query_terms & skill_terms)
+
+    skill_name = skill.name.lower()
+    query_lower = query.lower()
+    if skill_name in query_lower:
+        score += 3
+
+    skill_name_terms = _extract_relevance_terms(skill.name)
+    score += 2 * len(query_terms & skill_name_terms)
+    return score
+
+
+def _format_relevant_skills_hint(skills: list[Skill]) -> str:
+    return (
+        "<RELEVANT_SKILLS>\n"
+        "The following available skills look relevant to the user's request. "
+        "Review the listed skill files before deciding whether to use them.\n\n"
+        f"{to_prompt(skills, max_description_length=240)}\n"
+        "</RELEVANT_SKILLS>"
+    )
+
 
 PROMPT_DIR = pathlib.Path(__file__).parent / "prompts" / "templates"
 
@@ -136,6 +227,35 @@ class AgentContext(BaseModel):
                 )
 
         return self
+
+    def _find_relevant_available_skills(
+        self,
+        query: str,
+        skip_skill_names: set[str],
+    ) -> list[Skill]:
+        query_terms = _extract_relevance_terms(query)
+        if not query_terms:
+            return []
+
+        scored_skills: list[tuple[int, Skill]] = []
+        for skill in self.skills:
+            if skill.name in skip_skill_names:
+                continue
+            if not (skill.is_agentskills_format or skill.trigger is not None):
+                continue
+            score = _score_relevant_skill(skill, query, query_terms)
+            if score < _RELEVANT_SKILL_MIN_SCORE:
+                continue
+            scored_skills.append((score, skill))
+
+        scored_skills.sort(
+            key=lambda item: (
+                -item[0],
+                0 if item[1].is_agentskills_format else 1,
+                item[1].name,
+            )
+        )
+        return [skill for _, skill in scored_skills[:_RELEVANT_SKILL_MAX_SUGGESTIONS]]
 
     def get_secret_infos(self) -> list[dict[str, str | None]]:
         """Get secret information (name and description) from the secrets field.
@@ -301,12 +421,14 @@ class AgentContext(BaseModel):
             if user_message_suffix:
                 return TextContent(text=user_message_suffix), []
             return None
+
+        skipped_names = set(skip_skill_names)
         # Search for skill triggers in the query
         for skill in self.skills:
             if not isinstance(skill, Skill):
                 continue
             trigger = skill.match_trigger(query)
-            if trigger and skill.name not in skip_skill_names:
+            if trigger and skill.name not in skipped_names:
                 logger.info(
                     "Skill '%s' triggered by keyword '%s'",
                     skill.name,
@@ -320,16 +442,36 @@ class AgentContext(BaseModel):
                         location=skill.source,
                     )
                 )
+
+        recalled_skill_names = {knowledge.name for knowledge in recalled_knowledge}
+        relevant_skills = self._find_relevant_available_skills(
+            query,
+            skip_skill_names=skipped_names | recalled_skill_names,
+        )
+
+        formatted_sections: list[str] = []
         if recalled_knowledge:
-            formatted_skill_text = render_template(
-                prompt_dir=str(PROMPT_DIR),
-                template_name="skill_knowledge_info.j2",
-                triggered_agents=recalled_knowledge,
+            formatted_sections.append(
+                render_template(
+                    prompt_dir=str(PROMPT_DIR),
+                    template_name="skill_knowledge_info.j2",
+                    triggered_agents=recalled_knowledge,
+                )
             )
+        if relevant_skills:
+            logger.info(
+                "Suggesting relevant skills for query '%s': %s",
+                query,
+                [skill.name for skill in relevant_skills],
+            )
+            formatted_sections.append(_format_relevant_skills_hint(relevant_skills))
+
+        if formatted_sections:
+            formatted_skill_text = "\n\n".join(formatted_sections)
             if user_message_suffix:
                 formatted_skill_text += "\n" + user_message_suffix
             return TextContent(text=formatted_skill_text), [
-                k.name for k in recalled_knowledge
+                knowledge.name for knowledge in recalled_knowledge
             ]
 
         if user_message_suffix:

@@ -146,6 +146,10 @@ consult each relevant package-level AGENTS.md.
 - If it is a long multi-line string (e.g., docstring), you should just add type ignore AFTER the ending """. You should NEVER ADD IT INSIDE the docstring.
 
 
+
+- `scripts/benchmark_skill_relevance.py` benchmarks skill discovery by copying selected `OpenHands/extensions` skills into a temporary `.claude/skills` workspace and comparing the standard `Agent` with `ACPAgent`.
+- When running ACP benchmarks locally, `LLM_API_KEY` and `LLM_MODEL` are required; the script defaults `ANTHROPIC_BASE_URL` to `https://llm-proxy.app.all-hands.dev/` when `LLM_BASE_URL` is unset so Claude ACP can route through the All-Hands proxy.
+
 </DEV_SETUP>
 
 <PR_ARTIFACTS>
