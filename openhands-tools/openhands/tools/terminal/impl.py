@@ -1,4 +1,5 @@
 import json
+import time
 from typing import TYPE_CHECKING, Literal
 
 from openhands.sdk.llm import TextContent
@@ -16,7 +17,10 @@ from openhands.tools.terminal.terminal.factory import (
     _is_tmux_available,
     create_terminal_session,
 )
-from openhands.tools.terminal.terminal.terminal_session import TerminalSession
+from openhands.tools.terminal.terminal.terminal_session import (
+    TerminalCommandStatus,
+    TerminalSession,
+)
 from openhands.tools.terminal.terminal.tmux_pane_pool import (
     DEFAULT_MAX_PANES,
     TmuxPanePool,
@@ -108,6 +112,27 @@ class TerminalExecutor(ToolExecutor[TerminalAction, TerminalObservation]):
             session._initialized = True
             self._sessions[pane_id] = session
         return self._sessions[pane_id]
+
+    @staticmethod
+    def _prepare_pooled_session(session: TerminalSession) -> None:
+        """Reset mutable session state so this checkout is independent.
+
+        Without this, leftover ``prev_status`` from a timed-out command
+        would cause the next independent call to be treated as a
+        follow-up interaction, and stale screen content could corrupt
+        PS1 counting.
+        """
+        if session.prev_status in (
+            TerminalCommandStatus.NO_CHANGE_TIMEOUT,
+            TerminalCommandStatus.HARD_TIMEOUT,
+            TerminalCommandStatus.CONTINUE,
+        ):
+            # Previous command didn't finish — interrupt and clear.
+            session.terminal.interrupt()
+            time.sleep(0.2)
+            session.terminal.clear_screen()
+        session.prev_status = None
+        session.prev_output = ""
 
     def _export_envs(
         self,
@@ -209,6 +234,16 @@ class TerminalExecutor(ToolExecutor[TerminalAction, TerminalObservation]):
             reset_result = self.reset()
 
             if action.command.strip():
+                # After reset the old session/terminal is dead.
+                # In pool mode, checkout a fresh pane for the command.
+                fresh: TmuxTerminal | None = None
+                if self._pool is not None:
+                    fresh = self._pool.checkout()
+                    session = self._wrap_session(fresh)
+                    self._prepare_pooled_session(session)
+                else:
+                    session = self.session
+
                 command_action = TerminalAction(
                     command=action.command,
                     timeout=action.timeout,
@@ -216,6 +251,9 @@ class TerminalExecutor(ToolExecutor[TerminalAction, TerminalObservation]):
                 )
                 self._export_envs(command_action, conversation, session=session)
                 command_result = session.execute(command_action)
+
+                if fresh is not None:
+                    self._pool.checkin(fresh)  # type: ignore[union-attr]
 
                 reset_text = reset_result.text
                 command_text = command_result.text
@@ -266,6 +304,7 @@ class TerminalExecutor(ToolExecutor[TerminalAction, TerminalObservation]):
         if self._pool is not None:
             with self._pool.pane() as terminal:
                 session = self._wrap_session(terminal)
+                self._prepare_pooled_session(session)
                 return self._execute_on_session(session, action, conversation)
         else:
             return self._execute_on_session(self.session, action, conversation)
