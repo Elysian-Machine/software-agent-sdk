@@ -218,7 +218,7 @@ async def events_socket(
                     # in the except block
                     logger.exception("error_in_subscription", stack_info=True)
                 except Exception:
-                    # Sending the error event to the client failed - likely a closed socket
+                    # Sending the error event failed - likely a closed socket
                     logger.debug("error_sending_error", exc_info=True, stack_info=True)
                     await _safe_close(websocket)
                     return
@@ -300,7 +300,7 @@ async def bash_events_socket(
                         "error_in_bash_event_subscription", stack_info=True
                     )
                 except Exception:
-                    # Sending the error event to the client failed - likely a closed socket
+                    # Sending the error event failed - likely a closed socket
                     logger.debug(
                         "error_sending_bash_error", exc_info=True, stack_info=True
                     )
